@@ -2,6 +2,8 @@
 
 use serde::Serialize;
 
+mod dpi;
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct MouseDevice {
@@ -32,37 +34,29 @@ fn detect_mice(show_hidden: bool) -> Result<Vec<MouseDevice>, String> {
     }
 }
 
+#[tauri::command]
+fn set_dpi(dpi: u16) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        dpi::set_dpi(dpi)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = dpi;
+        Err("DPI control is currently available on Windows only.".to_string())
+    }
+}
+
 fn is_relevant_mouse(mouse: &MouseDevice) -> bool {
     const GAMING_BRANDS: &[&str] = &[
-        "attack shark",
-        "logitech",
-        "razer",
-        "steelseries",
-        "corsair",
-        "glorious",
-        "pulsar",
-        "endgame gear",
-        "zowie",
-        "benq",
-        "finalmouse",
-        "lamzu",
-        "darmoshark",
-        "vxe",
-        "redragon",
-        "hyperx",
-        "roccat",
-        "asus",
-        "cooler master",
+        "attack shark", "logitech", "razer", "steelseries", "corsair", "glorious",
+        "pulsar", "endgame gear", "zowie", "benq", "finalmouse", "lamzu", "darmoshark",
+        "vxe", "redragon", "hyperx", "roccat", "asus", "cooler master",
     ];
     const HIDDEN_DEVICE_TERMS: &[&str] = &[
-        "hid-compliant mouse",
-        "microsoft input device",
-        "touchpad",
-        "trackpad",
-        "remote desktop",
-        "virtual",
-        "vmware",
-        "vbox",
+        "hid-compliant mouse", "microsoft input device", "touchpad", "trackpad",
+        "remote desktop", "virtual", "vmware", "vbox",
     ];
 
     let text = format!(
@@ -87,8 +81,6 @@ fn is_relevant_mouse(mouse: &MouseDevice) -> bool {
 }
 
 fn apply_known_mouse_identity(mouse: &mut MouseDevice) {
-    // The X1 receiver reports a generic HID name through Windows. Keep this mapping
-    // close to the scanner so the UI and the filter both receive a useful identity.
     if mouse.vid.as_deref() == Some("0x3151") && mouse.pid.as_deref() == Some("0x5031") {
         mouse.name = "Attack Shark X1".to_string();
         mouse.manufacturer = Some("Attack Shark".to_string());
@@ -111,12 +103,7 @@ mod windows_mouse_detection {
 
     pub fn detect() -> Result<Vec<MouseDevice>, String> {
         let device_info_set = unsafe {
-            SetupDiGetClassDevsW(
-                Some(&GUID_DEVCLASS_MOUSE),
-                PCWSTR::null(),
-                None,
-                DIGCF_PRESENT,
-            )
+            SetupDiGetClassDevsW(Some(&GUID_DEVCLASS_MOUSE), PCWSTR::null(), None, DIGCF_PRESENT)
         }
         .map_err(|error| format!("Windows could not enumerate mouse devices: {error}"))?;
 
@@ -132,7 +119,6 @@ mod windows_mouse_detection {
             if unsafe { SetupDiEnumDeviceInfo(device_info_set, index, &mut device_info) }.is_err() {
                 break;
             }
-
             index += 1;
 
             let instance_id = device_instance_id(device_info_set, &device_info);
@@ -161,7 +147,6 @@ mod windows_mouse_detection {
         let _ = unsafe { SetupDiDestroyDeviceInfoList(device_info_set) };
         mice.sort_by(|left, right| left.name.cmp(&right.name));
         mice.dedup_by(|left, right| left.id == right.id);
-
         Ok(mice)
     }
 
@@ -172,104 +157,56 @@ mod windows_mouse_detection {
     ) -> Option<String> {
         let mut required_size = 0;
         let _ = unsafe {
-            SetupDiGetDeviceRegistryPropertyW(
-                device_info_set,
-                device_info,
-                property,
-                None,
-                None,
-                Some(&mut required_size),
-            )
+            SetupDiGetDeviceRegistryPropertyW(device_info_set, device_info, property, None, None, Some(&mut required_size))
         };
-
-        if required_size == 0 {
-            return None;
-        }
+        if required_size == 0 { return None; }
 
         let mut buffer = vec![0_u8; required_size as usize];
         unsafe {
-            SetupDiGetDeviceRegistryPropertyW(
-                device_info_set,
-                device_info,
-                property,
-                None,
-                Some(buffer.as_mut_slice()),
-                None,
-            )
-            .ok()?;
+            SetupDiGetDeviceRegistryPropertyW(device_info_set, device_info, property, None, Some(buffer.as_mut_slice()), None)
+                .ok()?;
         }
 
-        let characters = buffer
-            .chunks_exact(2)
+        let characters = buffer.chunks_exact(2)
             .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
             .take_while(|character| *character != 0)
             .collect::<Vec<_>>();
         let value = String::from_utf16_lossy(&characters).trim().to_string();
-
         (!value.is_empty()).then_some(value)
     }
 
     fn device_instance_id(device_info_set: HDEVINFO, device_info: &SP_DEVINFO_DATA) -> String {
         let mut required_size = 0;
-        let _ = unsafe {
-            SetupDiGetDeviceInstanceIdW(device_info_set, device_info, None, Some(&mut required_size))
-        };
-
-        if required_size == 0 {
-            return "unknown-device".to_string();
-        }
+        let _ = unsafe { SetupDiGetDeviceInstanceIdW(device_info_set, device_info, None, Some(&mut required_size)) };
+        if required_size == 0 { return "unknown-device".to_string(); }
 
         let mut buffer = vec![0_u16; required_size as usize];
-        if unsafe {
-            SetupDiGetDeviceInstanceIdW(
-                device_info_set,
-                device_info,
-                Some(buffer.as_mut_slice()),
-                None,
-            )
-        }
-        .is_err()
-        {
+        if unsafe { SetupDiGetDeviceInstanceIdW(device_info_set, device_info, Some(buffer.as_mut_slice()), None) }.is_err() {
             return "unknown-device".to_string();
         }
 
-        String::from_utf16_lossy(
-            &buffer
-                .into_iter()
-                .take_while(|character| *character != 0)
-                .collect::<Vec<_>>(),
-        )
+        String::from_utf16_lossy(&buffer.into_iter().take_while(|character| *character != 0).collect::<Vec<_>>())
     }
 
     fn usb_identifier(value: &str, key: &str) -> Option<String> {
         let value = value.to_ascii_uppercase();
         let start = value.find(key)? + key.len();
-        let identifier = value[start..]
-            .chars()
-            .take_while(|character| character.is_ascii_hexdigit())
-            .take(4)
-            .collect::<String>();
-
+        let identifier = value[start..].chars().take_while(|character| character.is_ascii_hexdigit()).take(4).collect::<String>();
         (identifier.len() == 4).then(|| format!("0x{identifier}"))
     }
 
     fn connection_type(value: &str) -> &'static str {
         let value = value.to_ascii_uppercase();
-
-        if value.contains("BTH") || value.contains("BLUETOOTH") {
-            "Bluetooth"
-        } else if value.contains("USB") || value.contains("VID_") {
-            "USB"
-        } else {
-            "Wired"
-        }
+        if value.contains("BTH") || value.contains("BLUETOOTH") { "Bluetooth" }
+        else if value.contains("USB") || value.contains("VID_") { "USB" }
+        else { "Wired" }
     }
 }
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![detect_mice])
+        .invoke_handler(tauri::generate_handler![detect_mice, set_dpi])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
