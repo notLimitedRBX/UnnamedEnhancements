@@ -1,5 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import {
+  ChevronDown,
+  CircleHelp,
+  Gauge,
+  Gamepad2,
+  Keyboard,
+  Mouse,
+  RefreshCw,
+  Settings,
+  SlidersHorizontal,
+  Zap,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type MouseDevice = {
   id: string;
@@ -11,17 +23,38 @@ type MouseDevice = {
   connected: boolean;
 };
 
+type Tab = "overview" | "buttons" | "performance" | "profiles" | "settings";
+
+const tabs: { id: Tab; label: string; icon: typeof Mouse }[] = [
+  { id: "overview", label: "Overview", icon: Mouse },
+  { id: "buttons", label: "Buttons", icon: SlidersHorizontal },
+  { id: "performance", label: "Performance", icon: Gauge },
+  { id: "profiles", label: "Profiles", icon: Gamepad2 },
+  { id: "settings", label: "Settings", icon: Settings },
+];
+
+const actions = ["Left Click", "Right Click", "Middle Click", "Back", "Forward", "DPI Up", "DPI Down", "Disabled"];
+
 export default function App() {
   const [profile, setProfile] = useState("Default");
+  const [tab, setTab] = useState<Tab>("overview");
   const [mice, setMice] = useState<MouseDevice[]>([]);
   const [showOtherDevices, setShowOtherDevices] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dpi, setDpi] = useState(800);
+  const [polling, setPolling] = useState("1000 Hz");
+  const [buttonActions, setButtonActions] = useState<Record<string, string>>({
+    "Button 1": "Left Click",
+    "Button 2": "Right Click",
+    "Button 3": "Middle Click",
+    "Button 4": "Back",
+    "Button 5": "Forward",
+  });
 
   const refreshDevices = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-
     try {
       const detectedMice = await invoke<MouseDevice[]>("detect_mice", {
         showHidden: showOtherDevices,
@@ -39,70 +72,153 @@ export default function App() {
     void refreshDevices();
   }, [refreshDevices]);
 
-  return (
-    <main style={{ maxWidth: 760, padding: 32, fontFamily: "Arial, sans-serif" }}>
-      <header style={{ marginBottom: 28 }}>
-        <h1 style={{ marginBottom: 8 }}>Unnamed Desktop App</h1>
-        <p style={{ color: "#bdbdbd", margin: 0 }}>Mouse configuration utility</p>
-      </header>
+  const selectedMouse = mice.find((mouse) => mouse.connected) ?? mice[0];
+  const mouseLabel = selectedMouse?.name ?? "No mouse detected";
+  const connectionLabel = selectedMouse?.connection ?? "Waiting for device";
+  const connected = Boolean(selectedMouse?.connected);
 
-      <section aria-labelledby="detected-mice-heading">
-        <div style={{ alignItems: "center", display: "flex", gap: 16, justifyContent: "space-between" }}>
+  const deviceSummary = useMemo(
+    () => (connected ? "Connected and ready" : "Connect a mouse to begin configuring it"),
+    [connected],
+  );
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-mark"><Mouse size={19} strokeWidth={2.4} /></div>
           <div>
-            <h2 id="detected-mice-heading" style={{ marginBottom: 4 }}>Connected mice</h2>
-            <p style={{ color: "#bdbdbd", marginTop: 0 }}>
-              {showOtherDevices ? "All connected mouse devices" : "Recognised gaming and branded mice"}
-            </p>
+            <div className="brand-name">Unnamed</div>
+            <div className="brand-subtitle">Mouse Control</div>
           </div>
-          <button disabled={isLoading} onClick={() => void refreshDevices()} type="button">
-            {isLoading ? "Scanning…" : "Refresh devices"}
+        </div>
+
+        <div className="sidebar-section-label">Configure</div>
+        <nav className="nav-list" aria-label="Main navigation">
+          {tabs.map(({ id, label, icon: Icon }) => (
+            <button key={id} className={`nav-item ${tab === id ? "active" : ""}`} onClick={() => setTab(id)} type="button">
+              <Icon size={18} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-spacer" />
+        <div className="sidebar-device-card">
+          <div className="device-dot-wrap"><span className={`device-dot ${connected ? "online" : ""}`} /></div>
+          <div className="device-card-copy">
+            <strong>{mouseLabel}</strong>
+            <span>{connectionLabel}</span>
+          </div>
+          <button className="icon-button" title="Refresh devices" onClick={() => void refreshDevices()} type="button">
+            <RefreshCw size={15} className={isLoading ? "spin" : ""} />
           </button>
         </div>
+        <div className="sidebar-footer">Unnamed Desktop App <span>•</span> v0.1.0</div>
+      </aside>
 
-        <label style={{ display: "block", margin: "16px 0 20px" }}>
-          <input
-            checked={showOtherDevices}
-            onChange={(event) => setShowOtherDevices(event.target.checked)}
-            type="checkbox"
-          />{" "}
-          Show other connected mouse devices
-        </label>
+      <main className="content">
+        <header className="topbar">
+          <div>
+            <div className="eyebrow">{tab === "overview" ? "Device overview" : tabs.find((item) => item.id === tab)?.label}</div>
+            <h1>{tab === "overview" ? "Mouse configuration" : tabs.find((item) => item.id === tab)?.label}</h1>
+          </div>
+          <div className="topbar-actions">
+            <button className="help-button" type="button"><CircleHelp size={17} /> Help</button>
+            <div className="profile-picker">
+              <span>Profile</span>
+              <select value={profile} onChange={(event) => setProfile(event.target.value)} aria-label="Profile">
+                <option>Default</option>
+                <option>Gaming</option>
+                <option>FPS</option>
+                <option>Custom</option>
+              </select>
+              <ChevronDown size={15} className="select-chevron" />
+            </div>
+          </div>
+        </header>
 
-        {error && <p role="alert">Couldn&apos;t scan for mice: {error}</p>}
+        {error && <div className="error-banner">Couldn&apos;t scan for mice: {error}</div>}
 
-        {!error && !isLoading && mice.length === 0 && (
-          <p>
-            No recognised mouse was found. Turn on &ldquo;Show other connected mouse devices&rdquo; if your mouse is not listed yet.
-          </p>
+        {tab === "overview" && (
+          <>
+            <section className="device-hero panel">
+              <div className="device-hero-copy">
+                <div className="status-pill"><span className={`device-dot ${connected ? "online" : ""}`} /> {connected ? "Connected" : "Not connected"}</div>
+                <h2>{mouseLabel}</h2>
+                <p>{deviceSummary}</p>
+                <div className="device-meta">
+                  <span>{connectionLabel}</span>
+                  {selectedMouse?.manufacturer && <span>{selectedMouse.manufacturer}</span>}
+                  {selectedMouse?.vid && selectedMouse?.pid && <span>VID {selectedMouse.vid} · PID {selectedMouse.pid}</span>}
+                </div>
+                <button className="primary-button" onClick={() => void refreshDevices()} disabled={isLoading} type="button">
+                  <RefreshCw size={16} className={isLoading ? "spin" : ""} /> {isLoading ? "Scanning…" : "Scan for devices"}
+                </button>
+              </div>
+              <div className="mouse-illustration" aria-hidden="true">
+                <div className="mouse-body">
+                  <div className="mouse-wheel"><span /></div>
+                  <div className="mouse-line" />
+                </div>
+              </div>
+            </section>
+
+            <div className="section-heading">
+              <div><h2>Quick settings</h2><p>Common controls for your current profile.</p></div>
+            </div>
+            <section className="settings-grid">
+              <div className="setting-card panel">
+                <div className="setting-icon"><Gauge size={19} /></div>
+                <div className="setting-copy"><span>DPI</span><strong>{dpi}</strong><small>Current sensitivity</small></div>
+                <input aria-label="DPI" type="range" min="100" max="3200" step="100" value={dpi} onChange={(event) => setDpi(Number(event.target.value))} />
+              </div>
+              <div className="setting-card panel">
+                <div className="setting-icon"><Zap size={19} /></div>
+                <div className="setting-copy"><span>Polling rate</span><strong>{polling}</strong><small>USB report rate</small></div>
+                <div className="segmented">
+                  {["125 Hz", "500 Hz", "1000 Hz"].map((rate) => <button className={polling === rate ? "selected" : ""} key={rate} onClick={() => setPolling(rate)} type="button">{rate.replace(" Hz", "")}</button>)}
+                </div>
+              </div>
+              <div className="setting-card panel">
+                <div className="setting-icon"><Keyboard size={19} /></div>
+                <div className="setting-copy"><span>Button layout</span><strong>5 buttons</strong><small>Ready to customise</small></div>
+                <button className="secondary-button" onClick={() => setTab("buttons")} type="button">Configure</button>
+              </div>
+            </section>
+          </>
         )}
 
-        <div style={{ display: "grid", gap: 14 }}>
-          {mice.map((mouse) => (
-            <article
-              key={mouse.id}
-              style={{ background: "#1b1b1b", border: "1px solid #353535", borderRadius: 10, padding: 20 }}
-            >
-              <div style={{ alignItems: "center", display: "flex", gap: 10, justifyContent: "space-between" }}>
-                <h3 style={{ margin: 0 }}>🖱 {mouse.name}</h3>
-                <span style={{ color: mouse.connected ? "#71d88b" : "#ff8b8b" }}>
-                  {mouse.connected ? "Connected" : "Disconnected"}
-                </span>
-              </div>
-              <dl style={{ display: "grid", gap: 8, gridTemplateColumns: "130px 1fr", marginBottom: 0 }}>
-                {mouse.manufacturer && <><dt>Manufacturer</dt><dd>{mouse.manufacturer}</dd></>}
-                <dt>Connection</dt><dd>{mouse.connection}</dd>
-                {mouse.vid && <><dt>VID</dt><dd>{mouse.vid}</dd></>}
-                {mouse.pid && <><dt>PID</dt><dd>{mouse.pid}</dd></>}
-              </dl>
-            </article>
-          ))}
-        </div>
-      </section>
+        {tab === "buttons" && (
+          <section className="panel page-panel">
+            <div className="section-heading compact"><div><h2>Button mapping</h2><p>Choose an action for each mouse button.</p></div></div>
+            <div className="button-map-grid">
+              {Object.entries(buttonActions).map(([button, action]) => (
+                <label className="map-row" key={button}><span className="button-key">{button.replace("Button ", "M")}</span><span>{button}</span><select value={action} onChange={(event) => setButtonActions((current) => ({ ...current, [button]: event.target.value }))}>{actions.map((item) => <option key={item}>{item}</option>)}</select></label>
+              ))}
+            </div>
+          </section>
+        )}
 
-      <section style={{ borderTop: "1px solid #353535", marginTop: 32, paddingTop: 24 }}>
-        <strong>Profile: {profile}</strong>{" "}
-        <button onClick={() => setProfile("Gaming")} type="button">Switch</button>
-      </section>
-    </main>
+        {tab === "performance" && (
+          <section className="panel page-panel">
+            <div className="section-heading compact"><div><h2>Performance</h2><p>Fine-tune sensitivity and responsiveness.</p></div></div>
+            <div className="performance-layout">
+              <div className="performance-value"><span>Current DPI</span><strong>{dpi}</strong><small>DPI</small></div>
+              <input className="big-range" aria-label="DPI performance" type="range" min="100" max="3200" step="100" value={dpi} onChange={(event) => setDpi(Number(event.target.value))} />
+            </div>
+            <div className="polling-options"><span>Polling rate</span>{["125 Hz", "500 Hz", "1000 Hz"].map((rate) => <button className={polling === rate ? "selected" : ""} key={rate} onClick={() => setPolling(rate)} type="button">{rate}</button>)}</div>
+          </section>
+        )}
+
+        {tab === "profiles" && (
+          <section className="panel page-panel"><div className="section-heading compact"><div><h2>Profiles</h2><p>Switch between configurations without losing your settings.</p></div></div><div className="profile-grid">{["Default", "Gaming", "FPS", "Custom"].map((item) => <button key={item} className={`profile-card ${profile === item ? "selected" : ""}`} onClick={() => setProfile(item)} type="button"><Gamepad2 size={19} /><strong>{item}</strong><span>{item === profile ? "Active profile" : "Click to activate"}</span></button>)}</div></section>
+        )}
+
+        {tab === "settings" && (
+          <section className="panel page-panel"><div className="section-heading compact"><div><h2>Application settings</h2><p>Control how Unnamed behaves on your desktop.</p></div></div><label className="toggle-row"><span><strong>Show other connected mouse devices</strong><small>Include generic pointing devices in detection.</small></span><input checked={showOtherDevices} onChange={(event) => setShowOtherDevices(event.target.checked)} type="checkbox" /></label><label className="toggle-row"><span><strong>Start with Windows</strong><small>Launch Unnamed when you sign in.</small></span><input type="checkbox" /></label><label className="toggle-row"><span><strong>Minimise to tray</strong><small>Keep the app running when the window is closed.</small></span><input type="checkbox" defaultChecked /></label></section>
+        )}
+      </main>
+    </div>
   );
 }
