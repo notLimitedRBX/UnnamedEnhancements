@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, CircleHelp, Gauge, Gamepad2, Keyboard, Mouse, RefreshCw, Settings, SlidersHorizontal, Zap } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type MouseDevice = { id: string; name: string; manufacturer: string | null; vid: string | null; pid: string | null; connection: string; connected: boolean };
 type Tab = "overview" | "buttons" | "performance" | "profiles" | "settings";
@@ -23,6 +23,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [dpi, setDpi] = useState(800);
   const [polling, setPolling] = useState("1000 Hz");
+  const dpiTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [buttonActions, setButtonActions] = useState<Record<string, string>>({ "Button 1": "Left Click", "Button 2": "Right Click", "Button 3": "Middle Click", "Button 4": "Back", "Button 5": "Forward" });
 
   const refreshDevices = useCallback(async () => {
@@ -38,16 +39,23 @@ export default function App() {
   }, [showOtherDevices]);
 
   useEffect(() => { void refreshDevices(); }, [refreshDevices]);
+  useEffect(() => () => { if (dpiTimer.current) clearTimeout(dpiTimer.current); }, []);
 
-  const applyDpi = useCallback(async (nextDpi: number) => {
+  const applyDpi = useCallback((nextDpi: number) => {
     setDpi(nextDpi);
-    setIsApplyingDpi(true);
     setError(null);
-    try {
-      await invoke("set_dpi", { dpi: nextDpi });
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally { setIsApplyingDpi(false); }
+    setIsApplyingDpi(true);
+    if (dpiTimer.current) clearTimeout(dpiTimer.current);
+
+    dpiTimer.current = setTimeout(async () => {
+      try {
+        await invoke("set_dpi", { dpi: nextDpi });
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      } finally {
+        setIsApplyingDpi(false);
+      }
+    }, 300);
   }, []);
 
   const selectedMouse = mice.find((mouse) => mouse.connected) ?? mice[0];
@@ -75,7 +83,7 @@ export default function App() {
           <section className="device-hero panel"><div className="device-hero-copy"><div className="status-pill"><span className={`device-dot ${connected ? "online" : ""}`} /> {connected ? "Connected" : "Not connected"}</div><h2>{mouseLabel}</h2><p>{deviceSummary}</p><div className="device-meta"><span>{connectionLabel}</span>{selectedMouse?.manufacturer && <span>{selectedMouse.manufacturer}</span>}{selectedMouse?.vid && selectedMouse?.pid && <span>VID {selectedMouse.vid} · PID {selectedMouse.pid}</span>}</div><button className="primary-button" onClick={() => void refreshDevices()} disabled={isLoading} type="button"><RefreshCw size={16} className={isLoading ? "spin" : ""} /> {isLoading ? "Scanning…" : "Scan for devices"}</button></div><div className="mouse-illustration" aria-hidden="true"><div className="mouse-body"><div className="mouse-wheel"><span /></div><div className="mouse-line" /></div></div></section>
           <div className="section-heading"><div><h2>Quick settings</h2><p>Common controls for your current profile.</p></div></div>
           <section className="settings-grid">
-            <div className="setting-card panel"><div className="setting-icon"><Gauge size={19} /></div><div className="setting-copy"><span>DPI</span><strong>{dpi}</strong><small>{isApplyingDpi ? "Applying to mouse…" : "Hardware sensitivity"}</small></div><input aria-label="DPI" type="range" min="50" max="26000" step="50" value={dpi} onChange={(event) => void applyDpi(Number(event.target.value))} /></div>
+            <div className="setting-card panel"><div className="setting-icon"><Gauge size={19} /></div><div className="setting-copy"><span>DPI</span><strong>{dpi}</strong><small>{isApplyingDpi ? "Applying to mouse…" : "Hardware sensitivity"}</small></div><input aria-label="DPI" type="range" min="50" max="22000" step="50" value={dpi} onChange={(event) => applyDpi(Number(event.target.value))} /></div>
             <div className="setting-card panel"><div className="setting-icon"><Zap size={19} /></div><div className="setting-copy"><span>Polling rate</span><strong>{polling}</strong><small>USB report rate</small></div><div className="segmented">{["125 Hz", "500 Hz", "1000 Hz"].map((rate) => <button className={polling === rate ? "selected" : ""} key={rate} onClick={() => setPolling(rate)} type="button">{rate.replace(" Hz", "")}</button>)}</div></div>
             <div className="setting-card panel"><div className="setting-icon"><Keyboard size={19} /></div><div className="setting-copy"><span>Button layout</span><strong>5 buttons</strong><small>Ready to customise</small></div><button className="secondary-button" onClick={() => setTab("buttons")} type="button">Configure</button></div>
           </section>
@@ -83,7 +91,7 @@ export default function App() {
 
         {tab === "buttons" && <section className="panel page-panel"><div className="section-heading compact"><div><h2>Button mapping</h2><p>Choose an action for each mouse button.</p></div></div><div className="button-map-grid">{Object.entries(buttonActions).map(([button, action]) => <label className="map-row" key={button}><span className="button-key">{button.replace("Button ", "M")}</span><span>{button}</span><select value={action} onChange={(event) => setButtonActions((current) => ({ ...current, [button]: event.target.value }))}>{actions.map((item) => <option key={item}>{item}</option>)}</select></label>)}</div></section>}
 
-        {tab === "performance" && <section className="panel page-panel"><div className="section-heading compact"><div><h2>Performance</h2><p>Fine-tune sensitivity and responsiveness.</p></div></div><div className="performance-layout"><div className="performance-value"><span>Current DPI</span><strong>{dpi}</strong><small>{isApplyingDpi ? "Applying…" : "Hardware DPI"}</small></div><input className="big-range" aria-label="DPI performance" type="range" min="50" max="26000" step="50" value={dpi} onChange={(event) => void applyDpi(Number(event.target.value))} /></div><div className="polling-options"><span>Polling rate</span>{["125 Hz", "500 Hz", "1000 Hz"].map((rate) => <button className={polling === rate ? "selected" : ""} key={rate} onClick={() => setPolling(rate)} type="button">{rate}</button>)}</div></section>}
+        {tab === "performance" && <section className="panel page-panel"><div className="section-heading compact"><div><h2>Performance</h2><p>Fine-tune sensitivity and responsiveness.</p></div></div><div className="performance-layout"><div className="performance-value"><span>Current DPI</span><strong>{dpi}</strong><small>{isApplyingDpi ? "Applying…" : "Hardware DPI"}</small></div><input className="big-range" aria-label="DPI performance" type="range" min="50" max="22000" step="50" value={dpi} onChange={(event) => applyDpi(Number(event.target.value))} /></div><div className="polling-options"><span>Polling rate</span>{["125 Hz", "500 Hz", "1000 Hz"].map((rate) => <button className={polling === rate ? "selected" : ""} key={rate} onClick={() => setPolling(rate)} type="button">{rate}</button>)}</div></section>}
 
         {tab === "profiles" && <section className="panel page-panel"><div className="section-heading compact"><div><h2>Profiles</h2><p>Switch between configurations without losing your settings.</p></div></div><div className="profile-grid">{["Default", "Gaming", "FPS", "Custom"].map((item) => <button key={item} className={`profile-card ${profile === item ? "selected" : ""}`} onClick={() => setProfile(item)} type="button"><Gamepad2 size={19} /><strong>{item}</strong><span>{item === profile ? "Active profile" : "Click to activate"}</span></button>)}</div></section>}
 
