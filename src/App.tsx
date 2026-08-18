@@ -1,0 +1,5 @@
+import { Mouse, Settings, LayoutDashboard } from "lucide-react";
+
+export default function App() {
+  return <div className="app"><aside className="sidebar"><div className="brand">Unnamed</div><nav><button className="active"><LayoutDashboard size={18}/>Dashboard</button><button><Mouse size={18}/>Devices</button><button><Settings size={18}/>Settings</button></nav></aside><main className="main"><header><div><span className="eyebrow">DEVICE CONTROL</span><h1>Dashboard</h1></div><span className="status"><i/>Desktop shell</span></header><section className="card"><div className="icon"><Mouse/></div><div><span className="eyebrow">MOUSE</span><h2>Attack Shark X1</h2><p>Device module ready for hardware integration.</p></div><span className="placeholder">PLACEHOLDER</span></section><section className="card"><div><span className="eyebrow">DEVICE SYSTEM</span><h2>Modular hardware support</h2><p>The native device layer is prepared for HID detection, profiles and mouse controls.</p></div></section></main></div>;
+}
