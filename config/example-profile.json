@@ -1,0 +1,7 @@
+{
+  "profile": "Gaming",
+  "bindings": {
+    "MouseButton4": "Space",
+    "MouseButton5": "Ctrl"
+  }
+}
