@@ -1,9 +1,6 @@
 # Unnamed Windows Desktop App
-Tauri + React + TypeScript starter with a Windows desktop shell, device architecture, and Attack Shark X1 placeholder module.
+A mouse software you can use without the hassle.
 
-## Run
-npm install
-npm run tauri dev
+Which mouse do you use? Doesn't matter, we support it.
 
-## Build Windows installer
-npm run tauri build
+Less clutter in your funky, weird, rgb filled mouse app, invest in your comfort of life and invest in Unnamed Enhancements, the only mouse software you'll ever need.
