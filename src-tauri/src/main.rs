@@ -86,9 +86,18 @@ fn is_relevant_mouse(mouse: &MouseDevice) -> bool {
         && !text.contains("unknown")
 }
 
+fn apply_known_mouse_identity(mouse: &mut MouseDevice) {
+    // The X1 receiver reports a generic HID name through Windows. Keep this mapping
+    // close to the scanner so the UI and the filter both receive a useful identity.
+    if mouse.vid.as_deref() == Some("0x3151") && mouse.pid.as_deref() == Some("0x5031") {
+        mouse.name = "Attack Shark X1".to_string();
+        mouse.manufacturer = Some("Attack Shark".to_string());
+    }
+}
+
 #[cfg(target_os = "windows")]
 mod windows_mouse_detection {
-    use super::MouseDevice;
+    use super::{apply_known_mouse_identity, MouseDevice};
     use std::mem::size_of;
     use windows::{
         core::PCWSTR,
@@ -136,7 +145,7 @@ mod windows_mouse_detection {
                 .filter(|value| !value.trim().is_empty());
             let id_source = format!("{hardware_id} {instance_id}");
 
-            mice.push(MouseDevice {
+            let mut mouse = MouseDevice {
                 id: instance_id,
                 name,
                 manufacturer,
@@ -144,7 +153,9 @@ mod windows_mouse_detection {
                 pid: usb_identifier(&id_source, "PID_"),
                 connection: connection_type(&id_source).to_string(),
                 connected: true,
-            });
+            };
+            apply_known_mouse_identity(&mut mouse);
+            mice.push(mouse);
         }
 
         let _ = unsafe { SetupDiDestroyDeviceInfoList(device_info_set) };
