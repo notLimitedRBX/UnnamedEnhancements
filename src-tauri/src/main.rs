@@ -193,6 +193,7 @@ struct GithubRelease {
 struct GithubReleaseAsset {
     name: String,
     browser_download_url: String,
+    size: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -237,19 +238,26 @@ fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
     let destination = install_directory.join("UnnamedEnhancements.exe");
     let temporary_destination = install_directory.join("UnnamedEnhancements.download");
 
+    if fs::metadata(&destination).map(|metadata| metadata.len() == asset.size).unwrap_or(false) {
+        emit_download_progress(&app, 100, "Already up to date. Launching...");
+        Command::new(&destination)
+            .spawn()
+            .map_err(|error| format!("The app is installed but could not be launched: {error}"))?;
+        return Ok(());
+    }
+
     let mut response = client
         .get(&asset.browser_download_url)
         .send()
         .map_err(|error| format!("Could not start the app download: {error}"))?
         .error_for_status()
         .map_err(|error| format!("Could not start the app download: {error}"))?;
-    let total_bytes = response
-        .content_length()
-        .ok_or_else(|| "The download server did not provide a file size.".to_string())?;
+    let total_bytes = response.content_length().filter(|size| *size > 0).unwrap_or(asset.size);
     let mut file = File::create(&temporary_destination)
         .map_err(|error| format!("Could not create the app download: {error}"))?;
     let mut downloaded_bytes = 0_u64;
-    let mut buffer = [0_u8; 64 * 1024];
+    let mut last_percent = 0_u8;
+    let mut buffer = [0_u8; 256 * 1024];
 
     loop {
         let read = response
@@ -260,7 +268,10 @@ fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
             .map_err(|error| format!("Could not save the app download: {error}"))?;
         downloaded_bytes += read as u64;
         let percent = ((downloaded_bytes.saturating_mul(100) / total_bytes).min(100)) as u8;
-        emit_download_progress(&app, percent, format!("Downloading... {percent}%"));
+        if percent > last_percent {
+            last_percent = percent;
+            emit_download_progress(&app, percent, format!("Downloading... {percent}%"));
+        }
     }
     file.flush().map_err(|error| format!("Could not finish the app download: {error}"))?;
     drop(file);

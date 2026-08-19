@@ -13,17 +13,29 @@ function Downloader() {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let disposed = false;
+
+    setStatus("Checking for the latest version...");
     void listen<DownloadProgress>("download-progress", event => {
       setProgress(event.payload.percent);
       setStatus(event.payload.status);
     }).then(stop => {
-      unlisten = stop;
-      void invoke("download_latest_app").catch(reason => {
-        setError(reason instanceof Error ? reason.message : String(reason));
-        setStatus("Download unavailable");
-      });
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch(reason => {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setStatus("Download unavailable");
     });
-    return () => unlisten?.();
+
+    void invoke("download_latest_app").catch(reason => {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setStatus("Download unavailable");
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
 
   return (
