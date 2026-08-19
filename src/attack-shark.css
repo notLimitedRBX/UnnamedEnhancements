@@ -1,0 +1,18 @@
+/* Real white Attack Shark X1 product artwork. The source is the manufacturer's X1 product image. */
+.mouse-illustration {
+  position: relative;
+  overflow: visible;
+  background-image: url("https://attackshark.com/cdn/shop/files/X1_3_ce7e8143-8241-4e02-b881-65faace74e4c.png?v=1778225959&width=2048");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  min-height: 300px;
+  min-width: 360px;
+  filter: drop-shadow(0 24px 32px rgba(0, 0, 0, 0.20));
+}
+
+.mouse-illustration .mouse-body,
+.mouse-illustration .mouse-wheel,
+.mouse-illustration .mouse-line {
+  display: none !important;
+}
