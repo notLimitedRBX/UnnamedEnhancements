@@ -1,22 +1,36 @@
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./downloader.css";
 
+type DownloadProgress = { percent: number; status: string };
+
 function Downloader() {
   const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState("Preparing download...");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setProgress(value => value >= 68 ? 68 : value + 1);
-    }, 24);
-    return () => window.clearInterval(timer);
+    let unlisten: (() => void) | undefined;
+    void listen<DownloadProgress>("download-progress", event => {
+      setProgress(event.payload.percent);
+      setStatus(event.payload.status);
+    }).then(stop => {
+      unlisten = stop;
+      void invoke("download_latest_app").catch(reason => {
+        setError(reason instanceof Error ? reason.message : String(reason));
+        setStatus("Download unavailable");
+      });
+    });
+    return () => unlisten?.();
   }, []);
 
   return (
     <main className="downloader-screen">
       <section className="download-panel" aria-label="Unnamed Enhancements download progress">
         <h1>Unnamed Enhancements</h1>
-        <p>Downloading...</p>
+        <p>{error ?? status}</p>
         <strong>{progress}%</strong>
         <div className="progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
           <div className="progress-fill" style={{ width: `${progress}%` }} />

@@ -1,10 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use serde::Serialize;
-use std::sync::atomic::{AtomicBool, Ordering};
+use serde::{Deserialize, Serialize};
+use std::{
+    fs::{self, File},
+    io::{Read, Write},
+    path::PathBuf,
+    process::Command,
+    sync::atomic::{AtomicBool, Ordering},
+};
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
 
 #[cfg(target_os = "windows")]
@@ -178,11 +184,106 @@ mod windows_mouse_detection {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct GithubRelease {
+    assets: Vec<GithubReleaseAsset>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubReleaseAsset {
+    name: String,
+    browser_download_url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadProgress {
+    percent: u8,
+    status: String,
+}
+
+fn emit_download_progress(app: &tauri::AppHandle, percent: u8, status: impl Into<String>) {
+    let _ = app.emit("download-progress", DownloadProgress { percent, status: status.into() });
+}
+
+#[tauri::command]
+fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
+    emit_download_progress(&app, 0, "Checking for the latest version...");
+
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("UnnamedEnhancementsDownloader/0.1")
+        .build()
+        .map_err(|error| format!("Could not create download client: {error}"))?;
+    let release: GithubRelease = client
+        .get("https://api.github.com/repos/notLimitedRBX/UnnamedEnhancements/releases/latest")
+        .send()
+        .map_err(|error| format!("Could not check for a published app release: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("Could not check for a published app release: {error}"))?
+        .json()
+        .map_err(|error| format!("Could not read the published app release: {error}"))?;
+
+    let asset = release
+        .assets
+        .into_iter()
+        .find(|asset| asset.name == "UnnamedEnhancements.exe")
+        .ok_or_else(|| "The latest release does not contain UnnamedEnhancements.exe.".to_string())?;
+
+    let app_data = std::env::var_os("LOCALAPPDATA")
+        .ok_or_else(|| "Windows Local AppData could not be found.".to_string())?;
+    let install_directory = PathBuf::from(app_data).join("UnnamedEnhancements");
+    fs::create_dir_all(&install_directory)
+        .map_err(|error| format!("Could not create the app folder: {error}"))?;
+    let destination = install_directory.join("UnnamedEnhancements.exe");
+    let temporary_destination = install_directory.join("UnnamedEnhancements.download");
+
+    let mut response = client
+        .get(&asset.browser_download_url)
+        .send()
+        .map_err(|error| format!("Could not start the app download: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("Could not start the app download: {error}"))?;
+    let total_bytes = response
+        .content_length()
+        .ok_or_else(|| "The download server did not provide a file size.".to_string())?;
+    let mut file = File::create(&temporary_destination)
+        .map_err(|error| format!("Could not create the app download: {error}"))?;
+    let mut downloaded_bytes = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+
+    loop {
+        let read = response
+            .read(&mut buffer)
+            .map_err(|error| format!("Could not download the app: {error}"))?;
+        if read == 0 { break; }
+        file.write_all(&buffer[..read])
+            .map_err(|error| format!("Could not save the app download: {error}"))?;
+        downloaded_bytes += read as u64;
+        let percent = ((downloaded_bytes.saturating_mul(100) / total_bytes).min(100)) as u8;
+        emit_download_progress(&app, percent, format!("Downloading... {percent}%"));
+    }
+    file.flush().map_err(|error| format!("Could not finish the app download: {error}"))?;
+    drop(file);
+
+    if destination.exists() {
+        fs::remove_file(&destination)
+            .map_err(|error| format!("Close Unnamed Enhancements before updating it: {error}"))?;
+    }
+    fs::rename(&temporary_destination, &destination)
+        .map_err(|error| format!("Could not finish the app download: {error}"))?;
+
+    emit_download_progress(&app, 100, "Launching Unnamed Enhancements...");
+    Command::new(&destination)
+        .spawn()
+        .map_err(|error| format!("The app downloaded but could not be launched: {error}"))?;
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(TrayState { minimize_to_tray: AtomicBool::new(true) })
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, set_dpi, set_minimize_to_tray])
+        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, set_dpi, set_minimize_to_tray, download_latest_app])
         .on_page_load(|window, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                 let script = r#"(() => {
