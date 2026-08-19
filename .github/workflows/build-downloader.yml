@@ -2,6 +2,18 @@ name: Build Unnamed Enhancements Downloader
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - dpi-diagnostics
+    paths:
+      - downloader.html
+      - src/downloader.tsx
+      - src/downloader.css
+      - src-tauri/**
+      - package.json
+      - vite.config.ts
+      - public-downloader/**
+      - .github/workflows/build-downloader.yml
 
 jobs:
   build-downloader:
