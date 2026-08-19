@@ -73,8 +73,8 @@ select, select option, .image-controls select, .profile-picker select, .map-row 
 
 
 /* Attack Shark X1: match the actual split shell rather than the image bounds. */
-.x1-map .left-click{left:29%;top:5%;width:21%;height:39%;border-radius:18px 3px 7px 16px;clip-path:polygon(8% 0,91% 3%,100% 15%,100% 74%,66% 91%,0 100%,0 13%)}
-.x1-map .right-click{left:50%;top:5%;width:21%;height:39%;border-radius:3px 18px 16px 7px;clip-path:polygon(9% 3%,92% 0,100% 13%,100% 100%,34% 91%,0 74%,0 15%)}
+.x1-map .left-click{left:29%;top:5%;width:21%;height:42%;border-radius:18px 4px 8px 16px;clip-path:polygon(9% 0,89% 3%,100% 15%,100% 100%,0 100%,0 13%)}
+.x1-map .right-click{left:50%;top:5%;width:21%;height:42%;border-radius:4px 18px 16px 8px;clip-path:polygon(11% 3%,91% 0,100% 13%,100% 100%,0 100%,0 15%)}
 .x1-map .wheel-click{left:46%;top:25%;width:8%;height:18%;border-radius:7px}
 .x1-map .side-one{left:24%;top:43%;width:5%;height:9%;border-radius:5px}
 .x1-map .side-two{left:24%;top:53%;width:5%;height:9%;border-radius:5px}
