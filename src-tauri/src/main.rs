@@ -127,6 +127,14 @@ fn apply_known_mouse_identity(mouse: &mut MouseDevice) {
     {
         mouse.name = "Attack Shark X1".to_string();
         mouse.manufacturer = Some("Attack Shark".to_string());
+    } else if mouse.vid.as_deref() == Some("0x046d")
+        && matches!(mouse.pid.as_deref(), Some("0xc53f") | Some("0x4074"))
+    {
+        // The G305 is exposed through its LIGHTSPEED receiver. The receiver
+        // commonly identifies as C53F, while the paired mouse is 4074.
+        mouse.name = "Logitech G305 LIGHTSPEED".to_string();
+        mouse.manufacturer = Some("Logitech G".to_string());
+        mouse.connection = "LIGHTSPEED wireless".to_string();
     }
 }
 
