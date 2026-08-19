@@ -93,6 +93,9 @@ export default function App() {
     if (!activeProfile) return;
     setDpi(activeProfile.dpi);
     setPolling(activeProfile.polling);
+    void invoke("set_dpi", { dpi: activeProfile.dpi }).catch(reason => {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    });
   }, [profile]);
 
   const refresh = useCallback(async () => { setLoading(true); setError(null); try { setMice(await invoke<MouseDevice[]>("detect_mice", { showHidden: showOtherDevices })); } catch (e) { setMice([]); setError(e instanceof Error ? e.message : String(e)); } finally { setLoading(false); } }, [showOtherDevices]);
