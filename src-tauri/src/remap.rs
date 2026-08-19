@@ -11,7 +11,7 @@ use windows::Win32::{
     UI::{
         Input::KeyboardAndMouse::{SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VIRTUAL_KEY},
         WindowsAndMessaging::{
-        CallNextHookEx, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK,
+        CallNextHookEx, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
         MSLLHOOKSTRUCT, MSG, WH_MOUSE_LL, WM_XBUTTONDOWN, WM_XBUTTONUP,
         },
     },
