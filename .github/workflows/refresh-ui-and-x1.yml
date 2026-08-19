@@ -1,0 +1,83 @@
+name: Refresh UI and X1 asset
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install image tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pillow rembg onnxruntime
+
+      - name: Download and isolate white Attack Shark X1 side profile
+        run: |
+          mkdir -p public/assets
+          curl -L --fail --retry 3 \
+            'https://images.kabum.com.br/produtos/fotos/904343/mouse-gamer-sem-fio-attack-shark-x1-lightweight-white_1767959677_gg.jpg' \
+            -o /tmp/x1-source.jpg
+          python - <<'PY'
+          from PIL import Image, ImageChops
+          from rembg import remove
+
+          src = Image.open('/tmp/x1-source.jpg').convert('RGBA')
+          cut = remove(src)
+          # Tight crop around the isolated mouse and add a small transparent margin.
+          bbox = cut.getbbox()
+          if not bbox:
+              raise SystemExit('Background removal produced an empty image')
+          cut = cut.crop(bbox)
+          margin = max(12, int(min(cut.size) * 0.06))
+          out = Image.new('RGBA', (cut.width + margin * 2, cut.height + margin * 2), (0, 0, 0, 0))
+          out.alpha_composite(cut, (margin, margin))
+          # Verify that transparency is real and the result is not just the original white rectangle.
+          alpha = out.getchannel('A')
+          if alpha.getextrema()[0] > 0:
+              raise SystemExit('X1 asset has no transparent pixels')
+          out.save('public/assets/attack-shark-x1.png', 'PNG', optimize=True)
+          print('saved', out.size, 'alpha extrema', alpha.getextrema())
+          PY
+
+      - name: Fix UI scaling and dark controls
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          app = Path('src/App.tsx')
+          text = app.read_text()
+          old = '  const scale = uiScale / 100;'
+          text = text.replace(old, '')
+          old = '<div className="ui-scale-layer" style={{ transform: `scale(${scale})`, width: `${100 / scale}%`, minHeight: `${100 / scale}vh` }}>'
+          new = '<div className="ui-scale-layer" style={{ "--ui-scale": uiScale / 100 } as React.CSSProperties}>'
+          if old not in text:
+              raise SystemExit('Could not find the old UI scaling wrapper')
+          text = text.replace(old, new)
+          app.write_text(text)
+
+          css = Path('src/style.css')
+          c = css.read_text()
+          c += '''\n\n/* Stable UI scaling: zoom keeps the app in normal layout flow instead of transform-scaling its box. */\n.ui-scale-layer { zoom: var(--ui-scale, 1); min-height: 100vh; }\n\n/* Keep native controls dark so dropdowns never fall back to white browser UI. */\nselect, select option, .image-controls select, .profile-picker select, .map-row select {\n  color-scheme: dark;\n  background-color: #18191a !important;\n  color: #e3e4e6 !important;\n}\n.image-controls select:focus, .profile-picker select:focus, .map-row select:focus {\n  background-color: #1b1c1e !important;\n  color: #f0f0f1 !important;\n  outline: 1px solid #45474b;\n}\n'''
+          css.write_text(c)
+          PY
+
+      - name: Commit refreshed asset and UI fixes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/assets/attack-shark-x1.png src/App.tsx src/style.css
+          if git diff --cached --quiet; then
+            echo 'No changes to commit'
+          else
+            git commit -m 'fix UI scaling dark controls and refresh X1 side profile'
+            git push
+          fi
