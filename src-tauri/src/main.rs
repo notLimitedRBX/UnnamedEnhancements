@@ -87,7 +87,9 @@ fn is_relevant_mouse(mouse: &MouseDevice) -> bool {
 }
 
 fn apply_known_mouse_identity(mouse: &mut MouseDevice) {
-    if mouse.vid.as_deref() == Some("0x3151") && mouse.pid.as_deref() == Some("0x5031") {
+    if mouse.vid.as_deref() == Some("0x3151")
+        && matches!(mouse.pid.as_deref(), Some("0x5031") | Some("0x5032"))
+    {
         mouse.name = "Attack Shark X1".to_string();
         mouse.manufacturer = Some("Attack Shark".to_string());
     }
