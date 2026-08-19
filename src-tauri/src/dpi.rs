@@ -6,8 +6,6 @@ const X1_PRODUCT_ID: u16 = 0x5031;
 const WIRED_X1_VENDOR_ID: u16 = 0x1d57;
 const WIRED_X1_PRODUCT_IDS: [u16; 2] = [0xfa60, 0xfa65];
 const WIRED_X1_PRODUCT_ID: u16 = 0x5032;
-const PROTOCOL_COMMAND: u8 = 0x04;
-const PAYLOAD_LEN: usize = 56;
 const HID_FEATURE_DATA_LEN: usize = 64;
 const CONFIG_INTERFACE: i32 = 2;
 
@@ -90,30 +88,30 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 pub fn set_dpi(dpi: u16) -> Result<(), String> {
-    if !(50..=10_000).contains(&dpi) {
-        return Err("Hardware DPI verification is currently limited to 50–10,000 DPI.".to_string());
+    if !(50..=40_000).contains(&dpi) {
+        return Err("DPI must be between 50 and 40,000.".to_string());
     }
 
-    let packet = build_payload(dpi);
-    // Interface 2 exposes one unnumbered, 64-byte feature report. hidapi expects
-    // its leading byte to be the report ID, so zero represents the unnumbered report.
+    let data = build_qmk_dpi_report(dpi);
+    // The X1 uses an unnumbered 64-byte Feature report. hidapi requires a
+    // leading report-ID byte, so the zero at index 0 represents “unnumbered”.
     let mut report = [0u8; HID_FEATURE_DATA_LEN + 1];
-    report[1..1 + PAYLOAD_LEN].copy_from_slice(&packet);
+    report[1..].copy_from_slice(&data);
 
     let api = HidApi::new().map_err(|error| format!("Could not initialize HID: {error}"))?;
     let path = api
         .device_list()
         .find(|device| {
             device.vendor_id() == X1_VENDOR_ID
-                && device.product_id() == X1_PRODUCT_ID
+                && (device.product_id() == X1_PRODUCT_ID
+                    || device.product_id() == WIRED_X1_PRODUCT_ID)
                 && device.interface_number() == CONFIG_INTERFACE
                 && device.usage_page() == 0xffff
                 && device.usage() == 0x0002
         })
         .map(|device| device.path().to_owned())
         .ok_or_else(|| {
-            "Mouse configuration interface was not found. Reconnect the receiver and try again."
-                .to_string()
+            "Mouse configuration interface was not found. Connect the X1 by USB-C or its receiver and try again.".to_string()
         })?;
 
     let device = api
@@ -127,60 +125,24 @@ pub fn set_dpi(dpi: u16) -> Result<(), String> {
     Ok(())
 }
 
-fn build_payload(dpi: u16) -> [u8; PAYLOAD_LEN] {
-    let mut report = [0u8; PAYLOAD_LEN];
-
-    // The vendor protocol packet is carried inside the unnumbered HID feature data.
-    report[0] = PROTOCOL_COMMAND;
-    report[1] = 0x38;
-    report[2] = 0x01;
-    report[3] = 0x00; // angle snapping disabled
-    report[4] = 0x01; // ripple lighting enabled
-    report[5] = 0x3f; // six active DPI stages
-
-    let stages = [dpi, 1600, 2400, 3200, 5000, 8000];
-    for (index, stage) in stages.iter().enumerate() {
-        let (x, y) = encode_dpi(*stage);
-        report[8 + index] = x;
-        report[16 + index] = y;
-    }
-
-    report[24] = 0x01; // keep the first DPI stage selected
-    let colors = [
-        (0xff, 0x00, 0x00),
-        (0xff, 0x80, 0x00),
-        (0xff, 0xff, 0x00),
-        (0x00, 0xff, 0x00),
-        (0x00, 0x00, 0xff),
-        (0x80, 0x00, 0xff),
+fn build_qmk_dpi_report(dpi: u16) -> [u8; HID_FEATURE_DATA_LEN] {
+    // Captured from qmk.top’s working X1 SendFeatureReport request. The first
+    // DPI stage is stored twice (X/Y) as a little-endian u16 at offsets 8 and 24.
+    let mut report = [
+        0x54, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0xa5,
+        0xb0, 0x1d, 0x60, 0x09, 0x80, 0x0c, 0xe0, 0x15,
+        0x40, 0x1f, 0x40, 0x9c, 0x00, 0x00, 0x00, 0x00,
+        0xb0, 0x1d, 0x60, 0x09, 0x80, 0x0c, 0xe0, 0x15,
+        0x40, 0x1f, 0x40, 0x9c, 0x00, 0x00, 0x00, 0x00,
+        0xff, 0x00, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00,
+        0xff, 0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0x80,
+        0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     ];
-    for (index, (red, green, blue)) in colors.iter().enumerate() {
-        let offset = 25 + index * 4;
-        report[offset] = *red;
-        report[offset + 1] = *green;
-        report[offset + 2] = *blue;
-    }
 
-    report[49] = 0x02;
-    let checksum = report[3..50]
-        .iter()
-        .fold(0u16, |sum, byte| sum.wrapping_add(*byte as u16));
-    report[50] = (checksum & 0xff) as u8;
-    report[51] = (checksum >> 8) as u8;
-
+    let dpi = dpi.to_le_bytes();
+    report[8..10].copy_from_slice(&dpi);
+    report[24..26].copy_from_slice(&dpi);
     report
-}
-
-fn encode_dpi(dpi: u16) -> (u8, u8) {
-    let dpi = dpi.clamp(50, 10_000);
-
-    if dpi > 5000 && dpi % 100 == 0 {
-        let index = (dpi / 100).saturating_sub(1) as usize;
-        (DPI_MAP[index.min(DPI_MAP.len() - 1)], 0x01)
-    } else {
-        let index = (dpi.saturating_sub(50) / 50) as usize;
-        (DPI_MAP[index.min(DPI_MAP.len() - 1)], 0x00)
-    }
 }
 
 const DPI_MAP: [u8; 200] = [
