@@ -1,36 +1,84 @@
-name: Build Unnamed Enhancements
+name: Build Unnamed Enhancements Preview
 
 on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch containing the app changes
+        required: true
+        default: dpi-diagnostics
+        type: string
   push:
     branches:
-      - main
-  workflow_dispatch:
+      - dpi-diagnostics
+    paths:
+      - index.html
+      - src/**
+      - src-tauri/**
+      - package.json
+      - vite.config.ts
+      - public-app/**
+      - .github/workflows/build.yml
+
+concurrency:
+  group: app-preview-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-windows:
-    name: Build Windows App
+  build-app:
+    name: Build Portable Windows App
     runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout selected branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
+      - name: Restore npm cache
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\npm-cache
+          key: ${{ runner.os }}-npm-${{ hashFiles('package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install dependencies
-        run: npm install
+      - name: Restore Tauri build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\.cargo\registry
+            ~\.cargo\git
+            src-tauri\target
+          key: ${{ runner.os }}-tauri-${{ hashFiles('src-tauri/Cargo.toml', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-tauri-
 
-      - name: Build Tauri app
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --prefer-offline
+
+      - name: Build portable app
         run: npm run tauri build
 
-      - name: Upload Windows build
+      - name: Prepare portable app artifact
+        shell: pwsh
+        run: |
+          $app = Get-ChildItem "src-tauri/target/release" -Filter "*.exe" | Select-Object -First 1
+          if (-not $app) { throw "Portable app executable was not created." }
+          New-Item -ItemType Directory -Force -Path "release" | Out-Null
+          Copy-Item -LiteralPath $app.FullName -Destination "release/UnnamedEnhancements.exe"
+
+      - name: Upload portable app
         uses: actions/upload-artifact@v4
         with:
-          name: UnnamedEnhancements-Windows
-          path: src-tauri/target/release/bundle/
+          name: UnnamedEnhancements-Preview-Windows
+          path: release/UnnamedEnhancements.exe
+          compression-level: 9
