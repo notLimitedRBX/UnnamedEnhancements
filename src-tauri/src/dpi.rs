@@ -1,9 +1,61 @@
-use hidapi::HidApi;
+use hidapi::{HidApi, MAX_REPORT_DESCRIPTOR_SIZE};
+use serde::Serialize;
 
 const X1_VENDOR_ID: u16 = 0x3151;
 const X1_PRODUCT_ID: u16 = 0x5031;
 const REPORT_ID: u8 = 0x04;
 const PAYLOAD_LEN: usize = 56;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HidDiagnostic {
+    interface_number: i32,
+    usage_page: String,
+    usage: String,
+    manufacturer: Option<String>,
+    product: Option<String>,
+    report_descriptor: Option<String>,
+    descriptor_error: Option<String>,
+}
+
+pub fn inspect_dpi_hardware() -> Result<Vec<HidDiagnostic>, String> {
+    let api = HidApi::new().map_err(|error| format!("Could not initialise HID: {error}"))?;
+    let diagnostics = api.device_list()
+        .filter(|device| device.vendor_id() == X1_VENDOR_ID && device.product_id() == X1_PRODUCT_ID)
+        .map(|device| {
+            let (report_descriptor, descriptor_error) = match device.open_device(&api) {
+                Ok(handle) => {
+                    let mut descriptor = [0_u8; MAX_REPORT_DESCRIPTOR_SIZE];
+                    match handle.get_report_descriptor(&mut descriptor) {
+                        Ok(length) => (Some(hex(&descriptor[..length])), None),
+                        Err(error) => (None, Some(format!("Could not read report descriptor: {error}"))),
+                    }
+                }
+                Err(error) => (None, Some(format!("Could not open interface: {error}"))),
+            };
+
+            HidDiagnostic {
+                interface_number: device.interface_number(),
+                usage_page: format!("0x{:04x}", device.usage_page()),
+                usage: format!("0x{:04x}", device.usage()),
+                manufacturer: device.manufacturer_string().map(str::to_owned),
+                product: device.product_string().map(str::to_owned),
+                report_descriptor,
+                descriptor_error,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    if diagnostics.is_empty() {
+        return Err("Attack Shark X1 (VID 3151, PID 5031) was not found. Connect it by USB or its 2.4 GHz receiver and try again.".into());
+    }
+
+    Ok(diagnostics)
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
 
 pub fn set_dpi(dpi: u16) -> Result<(), String> {
     let dpi = dpi.clamp(50, 40_000);
