@@ -16,6 +16,8 @@ use tauri::{
 
 #[cfg(target_os = "windows")]
 mod dpi;
+#[cfg(target_os = "windows")]
+mod remap;
 
 #[derive(Default)]
 struct TrayState {
@@ -79,26 +81,30 @@ fn set_minimize_to_tray(enabled: bool, state: tauri::State<'_, TrayState>) {
 
 #[tauri::command]
 fn test_button_action(action: String, target: Option<String>) -> Result<(), String> {
-    let command = match action.as_str() {
-        "Open File Explorer" => ("explorer.exe".to_string(), None),
-        "Open Task Manager" => ("taskmgr.exe".to_string(), None),
-        "Open Windows Settings" => ("explorer.exe".to_string(), Some("ms-settings:".to_string())),
-        "Custom program" => {
-            let target = target.map(|value| value.trim().to_string()).filter(|value| !value.is_empty())
-                .ok_or_else(|| "Enter a program path before testing a custom program action.".to_string())?;
-            (target, None)
-        }
-        "Default" | "Disabled" => return Err("This action has nothing to test.".to_string()),
-        "Back" | "Forward" | "DPI Up" | "DPI Down" => return Err("This action is saved in the profile. Hardware button output needs the X1 button-protocol capture before it can be sent to the mouse.".to_string()),
-        _ => return Err("That button action is not supported yet.".to_string()),
-    };
-
-    let mut process = Command::new(&command.0);
-    if let Some(argument) = command.1 { process.arg(argument); }
-    process.spawn().map_err(|error| format!("Could not start this action: {error}"))?;
-    Ok(())
+    #[cfg(target_os = "windows")]
+    {
+        remap::run_action(&action, target.as_deref())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (action, target);
+        Err("Button actions are currently available on Windows only.".to_string())
+    }
 }
 
+#[tauri::command]
+fn apply_button_mappings(mappings: std::collections::HashMap<String, remap::ButtonBinding>) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        remap::set_mappings(mappings);
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = mappings;
+        Err("Button remapping is currently available on Windows only.".to_string())
+    }
+}
 fn is_relevant_mouse(mouse: &MouseDevice) -> bool {
     const GAMING_BRANDS: &[&str] = &[
         "attack shark", "logitech", "razer", "steelseries", "corsair", "glorious",
@@ -338,10 +344,13 @@ fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 fn main() {
+    #[cfg(target_os = "windows")]
+    remap::start();
+
     tauri::Builder::default()
         .manage(TrayState { minimize_to_tray: AtomicBool::new(true) })
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, set_dpi, set_minimize_to_tray, test_button_action, download_latest_app])
+        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, set_dpi, set_minimize_to_tray, test_button_action, apply_button_mappings, download_latest_app])
         .on_page_load(|window, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                 let script = r#"(() => {
