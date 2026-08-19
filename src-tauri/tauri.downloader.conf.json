@@ -18,13 +18,16 @@
         "minWidth": 720,
         "minHeight": 520,
         "resizable": false,
-        "center": true
+        "center": true,
+        "url": "downloader.html"
       }
     ]
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.ico"]
+    "icon": [
+      "icons/icon.ico"
+    ]
   }
 }
