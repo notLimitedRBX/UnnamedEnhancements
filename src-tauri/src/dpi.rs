@@ -5,6 +5,7 @@ const X1_VENDOR_ID: u16 = 0x3151;
 const X1_PRODUCT_ID: u16 = 0x5031;
 const WIRED_X1_VENDOR_ID: u16 = 0x1d57;
 const WIRED_X1_PRODUCT_IDS: [u16; 2] = [0xfa60, 0xfa65];
+const WIRED_X1_PRODUCT_ID: u16 = 0x5032;
 const PROTOCOL_COMMAND: u8 = 0x04;
 const PAYLOAD_LEN: usize = 56;
 const HID_FEATURE_DATA_LEN: usize = 64;
@@ -31,7 +32,9 @@ pub fn inspect_dpi_hardware() -> Result<Vec<HidDiagnostic>, String> {
     let diagnostics = api.device_list()
         .filter(|device| {
             let product = device.product_string().unwrap_or_default().to_ascii_lowercase();
-            (device.vendor_id() == X1_VENDOR_ID && device.product_id() == X1_PRODUCT_ID)
+            (device.vendor_id() == X1_VENDOR_ID
+                    && (device.product_id() == X1_PRODUCT_ID
+                        || device.product_id() == WIRED_X1_PRODUCT_ID))
                 || (device.vendor_id() == WIRED_X1_VENDOR_ID
                     && WIRED_X1_PRODUCT_IDS.contains(&device.product_id()))
                 || product.contains("mouse")
