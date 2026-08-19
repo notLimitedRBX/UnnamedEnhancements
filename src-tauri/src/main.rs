@@ -321,7 +321,7 @@ fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
         .build()
         .map_err(|error| format!("Could not create download client: {error}"))?;
     let release: GithubRelease = client
-        .get("https://api.github.com/repos/notLimitedRBX/UnnamedEnhancements/releases/latest")
+        .get("https://api.github.com/repos/7n8s/UnnamedEnhancements/releases/latest")
         .send()
         .map_err(|error| format!("Could not check for a published app release: {error}"))?
         .error_for_status()
