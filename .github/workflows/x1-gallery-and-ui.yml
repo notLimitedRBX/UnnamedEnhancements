@@ -22,7 +22,7 @@ jobs:
       - name: Download white X1 mouse-only images
         run: |
           python - <<'PY'
-          import json, re
+          import json
           from pathlib import Path
           from urllib.parse import urljoin
           import requests
@@ -52,8 +52,8 @@ jobs:
               if url not in candidates:
                   candidates.append(url)
 
-          # Prefer clean product-only white X1 images and keep a few distinct views.
-          candidates = candidates[:6]
+          # If the official page exposes no clean white-only image alt text,
+          # use the known white top-view listing as a fallback.
           if not candidates:
               candidates = ['https://games4u.pk/cdn/shop/files/attack_shark_2_234a69ba-7cb3-492a-8468-13c703d7fd56.jpg?v=1775740412&width=800']
 
@@ -63,8 +63,7 @@ jobs:
 
           def remove_connected_white_bg(image):
               image = image.convert('RGBA')
-              alpha = image.getchannel('A')
-              if alpha.getextrema() != (255, 255):
+              if image.getchannel('A').getextrema() != (255, 255):
                   return image
               px = image.load(); w, h = image.size
               seen = set(); stack = []
@@ -77,8 +76,6 @@ jobs:
                   if (x, y) in seen or not (0 <= x < w and 0 <= y < h):
                       continue
                   r, g, b, _ = px[x, y]
-                  # Only flood-fill bright neutral background pixels. This
-                  # avoids eating the black X1 outlines and wheel.
                   if min(r, g, b) < 238 or max(r, g, b) - min(r, g, b) > 12:
                       continue
                   seen.add((x, y))
@@ -101,6 +98,8 @@ jobs:
                   margin = 24
                   canvas = Image.new('RGBA', (image.width + margin*2, image.height + margin*2), (0,0,0,0))
                   canvas.alpha_composite(image, (margin, margin))
+                  if canvas.getchannel('A').getextrema()[0] != 0:
+                      continue
                   name = f'attack-shark-x1-{len(saved)+1}.png'
                   canvas.save(out_dir / name, optimize=True)
                   saved.append('/assets/x1/' + name)
@@ -112,8 +111,16 @@ jobs:
           if not saved:
               raise SystemExit('No usable white X1 mouse-only image could be generated.')
 
-          manifest = {'images': saved}
-          Path('public/assets/x1/manifest.json').write_text(json.dumps(manifest, indent=2))
+          # Keep the UI deterministic even when the manufacturer changes its
+          # gallery count: repeat the last valid mouse-only angle as needed.
+          while len(saved) < 4:
+              source = Path('public' + saved[-1])
+              target_name = f'attack-shark-x1-{len(saved)+1}.png'
+              target = out_dir / target_name
+              target.write_bytes(source.read_bytes())
+              saved.append('/assets/x1/' + target_name)
+
+          Path('public/assets/x1/manifest.json').write_text(json.dumps({'images': saved}, indent=2))
           print('Generated:', saved)
           PY
 
