@@ -4,8 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "vite --mode app",
+    "dev:downloader": "vite --mode downloader",
+    "build": "npm run build:app",
+    "build:app": "tsc && vite build --mode app",
+    "build:downloader": "tsc && vite build --mode downloader",
     "tauri": "tauri",
     "downloader:dev": "tauri dev --config src-tauri/tauri.downloader.conf.json",
     "downloader:build": "tauri build --config src-tauri/tauri.downloader.conf.json"

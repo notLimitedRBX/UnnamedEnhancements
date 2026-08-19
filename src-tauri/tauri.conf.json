@@ -5,7 +5,7 @@
   "identifier": "com.notlimited.unnameddesktopapp",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build:app",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
   },
