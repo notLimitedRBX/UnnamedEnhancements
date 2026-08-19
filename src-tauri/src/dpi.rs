@@ -3,6 +3,8 @@ use serde::Serialize;
 
 const X1_VENDOR_ID: u16 = 0x3151;
 const X1_PRODUCT_ID: u16 = 0x5031;
+const WIRED_X1_VENDOR_ID: u16 = 0x1d57;
+const WIRED_X1_PRODUCT_IDS: [u16; 2] = [0xfa60, 0xfa65];
 const PROTOCOL_COMMAND: u8 = 0x04;
 const PAYLOAD_LEN: usize = 56;
 const HID_FEATURE_DATA_LEN: usize = 64;
@@ -11,6 +13,8 @@ const CONFIG_INTERFACE: i32 = 2;
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HidDiagnostic {
+    vendor_id: String,
+    product_id: String,
     interface_number: i32,
     usage_page: String,
     usage: String,
@@ -25,7 +29,11 @@ pub struct HidDiagnostic {
 pub fn inspect_dpi_hardware() -> Result<Vec<HidDiagnostic>, String> {
     let api = HidApi::new().map_err(|error| format!("Could not initialise HID: {error}"))?;
     let diagnostics = api.device_list()
-        .filter(|device| device.vendor_id() == X1_VENDOR_ID && device.product_id() == X1_PRODUCT_ID)
+        .filter(|device| {
+            (device.vendor_id() == X1_VENDOR_ID && device.product_id() == X1_PRODUCT_ID)
+                || (device.vendor_id() == WIRED_X1_VENDOR_ID
+                    && WIRED_X1_PRODUCT_IDS.contains(&device.product_id()))
+        })
         .map(|device| {
             let (report_descriptor, descriptor_error, feature_report, feature_report_error) = match device.open_device(&api) {
                 Ok(handle) => {
@@ -49,6 +57,8 @@ pub fn inspect_dpi_hardware() -> Result<Vec<HidDiagnostic>, String> {
             };
 
             HidDiagnostic {
+                vendor_id: format!("0x{:04x}", device.vendor_id()),
+                product_id: format!("0x{:04x}", device.product_id()),
                 interface_number: device.interface_number(),
                 usage_page: format!("0x{:04x}", device.usage_page()),
                 usage: format!("0x{:04x}", device.usage()),
@@ -63,7 +73,7 @@ pub fn inspect_dpi_hardware() -> Result<Vec<HidDiagnostic>, String> {
         .collect::<Vec<_>>();
 
     if diagnostics.is_empty() {
-        return Err("Attack Shark X1 (VID 3151, PID 5031) was not found. Connect it by USB or its 2.4 GHz receiver and try again.".into());
+        return Err("Attack Shark X1 was not found. Connect it by USB-C or its 2.4 GHz receiver and try again.".into());
     }
 
     Ok(diagnostics)
