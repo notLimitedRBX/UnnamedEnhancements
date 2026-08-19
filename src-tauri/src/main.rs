@@ -135,6 +135,14 @@ fn apply_known_mouse_identity(mouse: &mut MouseDevice) {
         mouse.name = "Logitech G305 LIGHTSPEED".to_string();
         mouse.manufacturer = Some("Logitech G".to_string());
         mouse.connection = "LIGHTSPEED wireless".to_string();
+    } else if mouse.vid.as_deref() == Some("0x258a")
+        && matches!(mouse.pid.as_deref(), Some("0x0036") | Some("0x0027"))
+    {
+        // Original wired Model O / O- firmware revisions use Sinowealth's
+        // vendor ID; recognise the family without sending any untested reports.
+        mouse.name = "Glorious Model O Wired".to_string();
+        mouse.manufacturer = Some("Glorious".to_string());
+        mouse.connection = "Wired USB".to_string();
     }
 }
 
