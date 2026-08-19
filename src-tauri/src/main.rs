@@ -186,6 +186,7 @@ mod windows_mouse_detection {
 
 #[derive(Debug, Deserialize)]
 struct GithubRelease {
+    tag_name: String,
     assets: Vec<GithubReleaseAsset>,
 }
 
@@ -224,8 +225,8 @@ fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
         .json()
         .map_err(|error| format!("Could not read the published app release: {error}"))?;
 
-    let asset = release
-        .assets
+    let GithubRelease { tag_name: release_tag, assets } = release;
+    let asset = assets
         .into_iter()
         .find(|asset| asset.name == "UnnamedEnhancements.exe")
         .ok_or_else(|| "The latest release does not contain UnnamedEnhancements.exe.".to_string())?;
@@ -237,8 +238,15 @@ fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|error| format!("Could not create the app folder: {error}"))?;
     let destination = install_directory.join("UnnamedEnhancements.exe");
     let temporary_destination = install_directory.join("UnnamedEnhancements.download");
+    let version_marker = install_directory.join("version.txt");
+    let installed_version_matches = fs::read_to_string(&version_marker)
+        .map(|version| version.trim() == release_tag)
+        .unwrap_or(false);
+    let installed_file_matches = fs::metadata(&destination)
+        .map(|metadata| metadata.len() == asset.size)
+        .unwrap_or(false);
 
-    if fs::metadata(&destination).map(|metadata| metadata.len() == asset.size).unwrap_or(false) {
+    if installed_version_matches && installed_file_matches {
         emit_download_progress(&app, 100, "Already up to date. Launching...");
         Command::new(&destination)
             .spawn()
@@ -282,6 +290,7 @@ fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
     }
     fs::rename(&temporary_destination, &destination)
         .map_err(|error| format!("Could not finish the app download: {error}"))?;
+    let _ = fs::write(&version_marker, &release_tag);
 
     emit_download_progress(&app, 100, "Launching Unnamed Enhancements...");
     Command::new(&destination)
