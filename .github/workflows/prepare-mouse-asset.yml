@@ -1,0 +1,81 @@
+name: Prepare Attack Shark X1 asset
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/prepare-mouse-asset.yml
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-mouse-asset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download X1 reference image
+        run: |
+          mkdir -p public/assets
+          curl -L --fail --retry 3 \
+            'https://d3rs3wc4pbrcza.cloudfront.net/files/19643/Images/attack-shark-x1-mouse-price-in-pakistan-junaidtech-white-wir-19643-2370047-170525045555480.jpg' \
+            -o /tmp/x1-source.jpg
+
+      - name: Install image tools
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Remove white background and crop
+        run: |
+          python - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+
+          source = Image.open('/tmp/x1-source.jpg').convert('RGBA')
+          pixels = source.load()
+
+          # Make the near-white studio background transparent while preserving
+          # the mouse's white shell. Only pixels connected to the image edges
+          # are considered background candidates.
+          w, h = source.size
+          seen = set()
+          stack = []
+          for x in range(w):
+              stack.append((x, 0)); stack.append((x, h - 1))
+          for y in range(h):
+              stack.append((0, y)); stack.append((w - 1, y))
+
+          while stack:
+              x, y = stack.pop()
+              if (x, y) in seen or not (0 <= x < w and 0 <= y < h):
+                  continue
+              r, g, b, a = pixels[x, y]
+              # White/light-grey studio background threshold.
+              if min(r, g, b) < 228 or max(r, g, b) - min(r, g, b) > 14:
+                  continue
+              seen.add((x, y))
+              stack.extend(((x+1,y),(x-1,y),(x,y+1),(x,y-1)))
+
+          for x, y in seen:
+              pixels[x, y] = (255, 255, 255, 0)
+
+          bbox = source.getbbox()
+          if bbox:
+              source = source.crop(bbox)
+
+          # Add a small transparent margin for clean UI placement.
+          margin = 24
+          out = Image.new('RGBA', (source.width + margin*2, source.height + margin*2), (0,0,0,0))
+          out.alpha_composite(source, (margin, margin))
+          Path('public/assets').mkdir(parents=True, exist_ok=True)
+          out.save('public/assets/attack-shark-x1.png', optimize=True)
+          PY
+
+      - name: Commit generated asset
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/assets/attack-shark-x1.png
+          git diff --cached --quiet || git commit -m 'Add transparent Attack Shark X1 asset'
+          git push
