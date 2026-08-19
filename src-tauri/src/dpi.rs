@@ -30,9 +30,12 @@ pub fn inspect_dpi_hardware() -> Result<Vec<HidDiagnostic>, String> {
     let api = HidApi::new().map_err(|error| format!("Could not initialise HID: {error}"))?;
     let diagnostics = api.device_list()
         .filter(|device| {
+            let product = device.product_string().unwrap_or_default().to_ascii_lowercase();
             (device.vendor_id() == X1_VENDOR_ID && device.product_id() == X1_PRODUCT_ID)
                 || (device.vendor_id() == WIRED_X1_VENDOR_ID
                     && WIRED_X1_PRODUCT_IDS.contains(&device.product_id()))
+                || product.contains("mouse")
+                || device.usage_page() == 0xffff
         })
         .map(|device| {
             let (report_descriptor, descriptor_error, feature_report, feature_report_error) = match device.open_device(&api) {
@@ -73,7 +76,7 @@ pub fn inspect_dpi_hardware() -> Result<Vec<HidDiagnostic>, String> {
         .collect::<Vec<_>>();
 
     if diagnostics.is_empty() {
-        return Err("Attack Shark X1 was not found. Connect it by USB-C or its 2.4 GHz receiver and try again.".into());
+        return Err("No mouse or vendor HID interfaces were found. Connect the mouse and try again.".into());
     }
 
     Ok(diagnostics)
