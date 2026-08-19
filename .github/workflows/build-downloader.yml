@@ -34,8 +34,17 @@ jobs:
       - name: Build downloader
         run: npm run downloader:build
 
-      - name: Upload downloader build
+      - name: Prepare portable downloader
+        shell: pwsh
+        run: |
+          $source = Get-ChildItem "src-tauri/target/release" -Filter "*.exe" | Select-Object -First 1
+          if (-not $source) { throw "Portable downloader executable was not created." }
+          New-Item -ItemType Directory -Force -Path "release" | Out-Null
+          Copy-Item -LiteralPath $source.FullName -Destination "release/UnnamedEnhancements-Downloader.exe"
+
+      - name: Upload portable downloader
         uses: actions/upload-artifact@v4
         with:
           name: UnnamedEnhancements-Downloader-Windows
-          path: src-tauri/target/release/bundle/
+          path: release/UnnamedEnhancements-Downloader.exe
+          compression-level: 9
