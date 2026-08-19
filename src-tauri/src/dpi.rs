@@ -16,6 +16,8 @@ pub struct HidDiagnostic {
     product: Option<String>,
     report_descriptor: Option<String>,
     descriptor_error: Option<String>,
+    feature_report: Option<String>,
+    feature_report_error: Option<String>,
 }
 
 pub fn inspect_dpi_hardware() -> Result<Vec<HidDiagnostic>, String> {
@@ -23,15 +25,25 @@ pub fn inspect_dpi_hardware() -> Result<Vec<HidDiagnostic>, String> {
     let diagnostics = api.device_list()
         .filter(|device| device.vendor_id() == X1_VENDOR_ID && device.product_id() == X1_PRODUCT_ID)
         .map(|device| {
-            let (report_descriptor, descriptor_error) = match device.open_device(&api) {
+            let (report_descriptor, descriptor_error, feature_report, feature_report_error) = match device.open_device(&api) {
                 Ok(handle) => {
                     let mut descriptor = [0_u8; MAX_REPORT_DESCRIPTOR_SIZE];
-                    match handle.get_report_descriptor(&mut descriptor) {
+                    let (report_descriptor, descriptor_error) = match handle.get_report_descriptor(&mut descriptor) {
                         Ok(length) => (Some(hex(&descriptor[..length])), None),
                         Err(error) => (None, Some(format!("Could not read report descriptor: {error}"))),
-                    }
+                    };
+
+                    // Interface 2 advertises one 64-byte Feature report without a report ID.
+                    // hidapi requires a leading 0 byte for unnumbered reports, so the buffer is 65 bytes.
+                    let mut feature = [0_u8; 65];
+                    let (feature_report, feature_report_error) = match handle.get_feature_report(&mut feature) {
+                        Ok(length) => (Some(hex(&feature[..length])), None),
+                        Err(error) => (None, Some(format!("Could not read feature report: {error}"))),
+                    };
+
+                    (report_descriptor, descriptor_error, feature_report, feature_report_error)
                 }
-                Err(error) => (None, Some(format!("Could not open interface: {error}"))),
+                Err(error) => (None, Some(format!("Could not open interface: {error}")), None, Some(format!("Could not open interface: {error}"))),
             };
 
             HidDiagnostic {
@@ -42,6 +54,8 @@ pub fn inspect_dpi_hardware() -> Result<Vec<HidDiagnostic>, String> {
                 product: device.product_string().map(str::to_owned),
                 report_descriptor,
                 descriptor_error,
+                feature_report,
+                feature_report_error,
             }
         })
         .collect::<Vec<_>>();
