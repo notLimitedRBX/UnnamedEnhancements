@@ -1,0 +1,172 @@
+name: Build X1 mouse gallery and UI
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/x1-gallery-and-ui.yml
+
+permissions:
+  contents: write
+
+jobs:
+  build-gallery:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install image tools
+        run: python -m pip install --disable-pip-version-check pillow beautifulsoup4 requests
+
+      - name: Download white X1 mouse-only images
+        run: |
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+          from urllib.parse import urljoin
+          import requests
+          from bs4 import BeautifulSoup
+          from PIL import Image
+          from io import BytesIO
+
+          page_url = 'https://attackshark.com/products/attack-shark-x1-wireless-gaming-mouse-with-magnetic-charging-dock-paw3395pro'
+          headers = {'User-Agent': 'Mozilla/5.0'}
+          html = requests.get(page_url, headers=headers, timeout=30).text
+          soup = BeautifulSoup(html, 'html.parser')
+
+          excluded = ('dock', 'charging', 'black', 'red', 'purple', 'driver', 'software', 'parameter', 'grip tape', 'with tape', 'receiver', 'cable')
+          candidates = []
+          for img in soup.find_all('img'):
+              alt = (img.get('alt') or '').lower()
+              if 'x1' not in alt or 'mouse' not in alt or 'white' not in alt:
+                  continue
+              if any(word in alt for word in excluded):
+                  continue
+              src = img.get('src') or img.get('data-src') or img.get('data-original')
+              if not src and img.get('srcset'):
+                  src = img.get('srcset').split(',')[-1].strip().split(' ')[0]
+              if not src:
+                  continue
+              url = urljoin(page_url, src).replace('&amp;', '&')
+              if url not in candidates:
+                  candidates.append(url)
+
+          # Prefer clean product-only white X1 images and keep a few distinct views.
+          candidates = candidates[:6]
+          if not candidates:
+              candidates = ['https://games4u.pk/cdn/shop/files/attack_shark_2_234a69ba-7cb3-492a-8468-13c703d7fd56.jpg?v=1775740412&width=800']
+
+          out_dir = Path('public/assets/x1')
+          out_dir.mkdir(parents=True, exist_ok=True)
+          saved = []
+
+          def remove_connected_white_bg(image):
+              image = image.convert('RGBA')
+              alpha = image.getchannel('A')
+              if alpha.getextrema() != (255, 255):
+                  return image
+              px = image.load(); w, h = image.size
+              seen = set(); stack = []
+              for x in range(w):
+                  stack.extend(((x, 0), (x, h - 1)))
+              for y in range(h):
+                  stack.extend(((0, y), (w - 1, y)))
+              while stack:
+                  x, y = stack.pop()
+                  if (x, y) in seen or not (0 <= x < w and 0 <= y < h):
+                      continue
+                  r, g, b, _ = px[x, y]
+                  # Only flood-fill bright neutral background pixels. This
+                  # avoids eating the black X1 outlines and wheel.
+                  if min(r, g, b) < 238 or max(r, g, b) - min(r, g, b) > 12:
+                      continue
+                  seen.add((x, y))
+                  stack.extend(((x+1,y),(x-1,y),(x,y+1),(x,y-1)))
+              for x, y in seen:
+                  px[x, y] = (255, 255, 255, 0)
+              return image
+
+          for url in candidates:
+              try:
+                  response = requests.get(url, headers=headers, timeout=30)
+                  response.raise_for_status()
+                  image = remove_connected_white_bg(Image.open(BytesIO(response.content)))
+                  bbox = image.getbbox()
+                  if not bbox:
+                      continue
+                  image = image.crop(bbox)
+                  if image.width < 120 or image.height < 100:
+                      continue
+                  margin = 24
+                  canvas = Image.new('RGBA', (image.width + margin*2, image.height + margin*2), (0,0,0,0))
+                  canvas.alpha_composite(image, (margin, margin))
+                  name = f'attack-shark-x1-{len(saved)+1}.png'
+                  canvas.save(out_dir / name, optimize=True)
+                  saved.append('/assets/x1/' + name)
+                  if len(saved) >= 4:
+                      break
+              except Exception as exc:
+                  print(f'skipping {url}: {exc}')
+
+          if not saved:
+              raise SystemExit('No usable white X1 mouse-only image could be generated.')
+
+          manifest = {'images': saved}
+          Path('public/assets/x1/manifest.json').write_text(json.dumps(manifest, indent=2))
+          print('Generated:', saved)
+          PY
+
+      - name: Add X1 image arrows to the app
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/App.tsx')
+          text = p.read_text()
+
+          text = text.replace(
+              'import { CircleHelp, Gauge, Gamepad2, ImagePlus, Keyboard, Mouse, Palette, RefreshCw, Settings, SlidersHorizontal, Upload, Zap } from "lucide-react";',
+              'import { ChevronLeft, ChevronRight, CircleHelp, Gauge, Gamepad2, ImagePlus, Keyboard, Mouse, Palette, RefreshCw, Settings, SlidersHorizontal, Upload, Zap } from "lucide-react";'
+          )
+
+          anchor = '  const [polling, setPolling] = useState("1000 Hz");\n'
+          replacement = anchor + '  const [mouseAssetIndex, setMouseAssetIndex] = useState(() => Number(localStorage.getItem("unnamed-x1-image-index") || 0));\n  const mouseAssets = ["/assets/x1/attack-shark-x1-1.png", "/assets/x1/attack-shark-x1-2.png", "/assets/x1/attack-shark-x1-3.png", "/assets/x1/attack-shark-x1-4.png"];\n'
+          if anchor in text and 'mouseAssetIndex' not in text:
+              text = text.replace(anchor, replacement, 1)
+
+          anchor = '  useEffect(() => () => { if (dpiTimer.current) clearTimeout(dpiTimer.current); }, []);\n'
+          replacement = anchor + '  useEffect(() => { localStorage.setItem("unnamed-x1-image-index", String(mouseAssetIndex)); }, [mouseAssetIndex]);\n'
+          if anchor in text and 'unnamed-x1-image-index' not in text:
+              text = text.replace(anchor, replacement, 1)
+
+          old = '<div className="mouse-illustration"><img src="/assets/attack-shark-x1.png" alt="White Attack Shark X1" onError={e => { e.currentTarget.style.display = "none"; }}/></div>'
+          new = '<div className="mouse-illustration"><button className="mouse-image-arrow left" type="button" aria-label="Previous mouse image" onClick={() => setMouseAssetIndex(i => (i - 1 + mouseAssets.length) % mouseAssets.length)}><ChevronLeft size={18}/></button><img src={mouseAssets[mouseAssetIndex % mouseAssets.length]} alt="White Attack Shark X1"/><button className="mouse-image-arrow right" type="button" aria-label="Next mouse image" onClick={() => setMouseAssetIndex(i => (i + 1) % mouseAssets.length)}><ChevronRight size={18}/></button><div className="mouse-image-count">{(mouseAssetIndex % mouseAssets.length) + 1} / {mouseAssets.length}</div></div>'
+          if old in text:
+              text = text.replace(old, new, 1)
+          else:
+              raise SystemExit('Could not find the existing mouse image markup in App.tsx')
+
+          p.write_text(text)
+          PY
+
+      - name: Style minimalist image arrows
+        run: |
+          cat >> src/appearance.css <<'CSS'
+
+          .mouse-illustration{position:relative;display:flex;align-items:center;justify-content:center;overflow:visible;padding:8px 38px;}
+          .mouse-illustration img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 20px 28px rgba(0,0,0,.22));}
+          .mouse-image-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:30px;height:30px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.18);border-radius:999px;background:rgba(20,22,26,.55);color:rgba(255,255,255,.78);backdrop-filter:blur(12px);cursor:pointer;transition:background .14s,border-color .14s,color .14s,transform .14s;}
+          .mouse-image-arrow:hover{background:rgba(30,33,39,.78);border-color:rgba(255,255,255,.3);color:#fff;}
+          .mouse-image-arrow:active{transform:translateY(-50%) scale(.94);}
+          .mouse-image-arrow.left{left:2px;}
+          .mouse-image-arrow.right{right:2px;}
+          .mouse-image-count{position:absolute;bottom:2px;left:50%;transform:translateX(-50%);font-size:8px;color:rgba(255,255,255,.55);padding:3px 6px;border:1px solid rgba(255,255,255,.12);background:rgba(16,18,22,.42);border-radius:999px;backdrop-filter:blur(10px);}
+          CSS
+
+      - name: Commit gallery and app changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/assets/x1 src/App.tsx src/appearance.css
+          git diff --cached --quiet || git commit -m 'Add white X1 mouse image gallery and arrows'
+          git push
