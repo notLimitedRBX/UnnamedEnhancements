@@ -70,13 +70,13 @@ export default function App() {
   const mouse = mice.find(m => m.connected) ?? mice[0];
   const connected = Boolean(mouse?.connected);
   const background: React.CSSProperties = bgMode === "solid" ? { background: bgColor } : bgMode === "gradient" ? { background: `linear-gradient(135deg, ${gradA}, ${gradB})` } : bgMode === "image" && bgImage ? { backgroundImage: `url(${bgImage})`, backgroundSize: fit === "stretch" ? "100% 100%" : fit, backgroundPosition: "center", backgroundRepeat: "no-repeat" } : { background: "#101112" };
-  const scale = uiScale / 100;
+
   const glassStyle = { "--glass-alpha": String(glassOpacity / 100), "--glass-blur": `${glassBlur}px`, "--glass-tint": glassTint, "--glass-border": String(glassBorder / 100), "--glass-radius": `${glassRadius}px` } as React.CSSProperties;
 
   return <div className={`app-shell glass-${glassMode}`} style={glassStyle}>
     <div className="background-layer" style={{ ...background, opacity: bgMode === "default" ? 1 : bgOpacity / 100, filter: bgBlur ? `blur(${bgBlur}px)` : undefined }} />
     <div className="background-shade" />
-    <div className="ui-scale-layer" style={{ transform: `scale(${scale})`, width: `${100 / scale}%`, minHeight: `${100 / scale}vh` }}>
+    <div className="ui-scale-layer" style={{ "--ui-scale": uiScale / 100 } as React.CSSProperties}>
       <aside className="sidebar glass-surface">
         <div className="brand"><div className="brand-mark"><Mouse size={19} /></div><div><div className="brand-name">Unnamed</div><div className="brand-subtitle">Mouse Control</div></div></div>
         <div className="sidebar-section-label">Configure</div>
