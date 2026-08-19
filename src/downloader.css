@@ -25,7 +25,7 @@ body { margin: 0; min-width: 720px; min-height: 520px; overflow: hidden; }
   position: absolute;
   inset: -18px;
   z-index: -2;
-  background: url("/assets/downloader/misty-forest.png") center / cover no-repeat;
+  background: url("/assets/downloader/misty-forest.jpg") center / cover no-repeat;
   filter: blur(5px);
   transform: scale(1.035);
 }
