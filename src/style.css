@@ -18,3 +18,12 @@ select, select option, .image-controls select, .profile-picker select, .map-row 
   color: #f0f0f1 !important;
   outline: 1px solid #45474b;
 }
+
+
+/* Polished controls and page hierarchy. */
+.profile-label{color:#8f939a;font-size:9px;letter-spacing:.03em}.topbar-actions{padding-top:2px}
+.dpi-preset-row{display:flex;gap:5px;margin-top:10px;flex-wrap:wrap}.dpi-preset-row button{border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.12);border-radius:7px;padding:4px 7px;color:#92959c;font-size:8px;cursor:pointer}.dpi-preset-row button:hover,.dpi-preset-row button.selected{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.22);color:#fff}.dpi-preset-row.full{margin-top:15px}
+.page-status{display:flex;align-items:center;gap:7px;border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:6px 9px;color:#b7bac0;background:rgba(255,255,255,.04);font-size:9px;white-space:nowrap}
+.mapping-label-row{display:grid;grid-template-columns:42px minmax(90px,1fr) minmax(150px,1.25fr) auto;gap:12px;padding:0 11px 7px;color:#777b83;text-transform:uppercase;font-size:8px;letter-spacing:.08em}.mapping-label-row span:first-child{grid-column:1 / span 2}
+.performance-slider{flex:1;min-width:0}.map-row{box-shadow:inset 0 1px 0 rgba(255,255,255,.035)}.map-row:hover{border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.055)}.page-panel{box-shadow:0 22px 70px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.07)}
+@media(max-width:760px){.profile-label,.mapping-label-row{display:none}.topbar-actions{padding:0}.page-status{display:none}}
