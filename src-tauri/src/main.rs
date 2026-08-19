@@ -80,48 +80,6 @@ fn set_minimize_to_tray(enabled: bool, state: tauri::State<'_, TrayState>) {
 }
 
 #[tauri::command]
-fn ask_personal_assistant(api_key: String, message: String, device_context: Option<String>) -> Result<String, String> {
-    let api_key = api_key.trim();
-    let message = message.trim();
-    if api_key.is_empty() { return Err("Add your OpenAI API key first. It is used for this reply only and is not saved by Unnamed.".to_string()); }
-    if !api_key.starts_with("sk-") { return Err("That does not look like an OpenAI API key.".to_string()); }
-    if message.is_empty() { return Err("Write a question for the assistant first.".to_string()); }
-    if message.chars().count() > 4_000 { return Err("Keep each question under 4,000 characters.".to_string()); }
-
-    let context = device_context.unwrap_or_else(|| "No mouse is currently detected.".to_string());
-    let input = format!(
-        "You are Unnamed Assistant, a concise, friendly personal helper inside a Windows mouse-configuration app. Help with everyday PC questions as well as Unnamed's mouse, buttons, profiles, DPI, and troubleshooting. Be honest about uncertainty. Never claim you changed a computer setting or mouse hardware yourself. Current device context: {context}\n\nUser: {message}"
-    );
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(45))
-        .build()
-        .map_err(|error| format!("Could not create the OpenAI client: {error}"))?;
-    let response = client
-        .post("https://api.openai.com/v1/responses")
-        .bearer_auth(api_key)
-        .json(&serde_json::json!({
-            "model": "gpt-5-mini",
-            "input": input,
-            "max_output_tokens": 700,
-            "store": false
-        }))
-        .send()
-        .map_err(|error| format!("Could not reach OpenAI: {error}"))?;
-    let status = response.status();
-    let payload: serde_json::Value = response.json()
-        .map_err(|error| format!("OpenAI returned an unreadable response: {error}"))?;
-    if !status.is_success() {
-        let detail = payload.pointer("/error/message").and_then(serde_json::Value::as_str).unwrap_or("The request was rejected.");
-        return Err(format!("OpenAI: {detail}"));
-    }
-    payload.get("output_text")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_owned)
-        .filter(|text| !text.trim().is_empty())
-        .ok_or_else(|| "OpenAI returned no text answer.".to_string())
-}
-
-#[tauri::command]
 fn test_button_action(action: String, target: Option<String>) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -408,7 +366,7 @@ fn main() {
     tauri::Builder::default()
         .manage(TrayState { minimize_to_tray: AtomicBool::new(true) })
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, set_dpi, set_minimize_to_tray, test_button_action, apply_button_mappings, ask_personal_assistant, download_latest_app])
+        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, set_dpi, set_minimize_to_tray, test_button_action, apply_button_mappings, download_latest_app])
         .on_page_load(|window, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                 let script = r#"(() => {
