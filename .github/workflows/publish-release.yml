@@ -33,11 +33,30 @@ jobs:
         with:
           node-version: 22
 
+      - name: Restore npm cache
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\npm-cache
+          key: ${{ runner.os }}-npm-${{ hashFiles('package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Restore Tauri build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\.cargo\registry
+            ~\.cargo\git
+            src-tauri\target
+          key: ${{ runner.os }}-tauri-${{ hashFiles('src-tauri/Cargo.toml', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-tauri-
+
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund --prefer-offline
 
       - name: Build Windows app
         run: npm run tauri build
