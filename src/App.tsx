@@ -36,6 +36,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [dpi, setDpi] = useState(800);
   const [polling, setPolling] = useState("1000 Hz");
+  const [textScale, setTextScale] = useState(() => Number(localStorage.getItem("unnamed-text-scale") || 100));
   const [mouseAssetIndex, setMouseAssetIndex] = useState(() => Number(localStorage.getItem("unnamed-x1-image-index") || 0));
   const mouseAssets = ["/assets/x1/attack-shark-x1-1.png", "/assets/x1/attack-shark-x1-2.png", "/assets/x1/attack-shark-x1-3.png", "/assets/x1/attack-shark-x1-4.png"];
   const dpiTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -73,7 +74,7 @@ export default function App() {
   const connected = Boolean(mouse?.connected);
   const background: React.CSSProperties = bgMode === "solid" ? { background: bgColor } : bgMode === "gradient" ? { background: `linear-gradient(135deg, ${gradA}, ${gradB})` } : bgMode === "image" && bgImage ? { backgroundImage: `url(${bgImage})`, backgroundSize: fit === "stretch" ? "100% 100%" : fit, backgroundPosition: "center", backgroundRepeat: "no-repeat" } : { background: "#101112" };
 
-  const glassStyle = { "--glass-alpha": String(glassOpacity / 100), "--glass-blur": `${glassBlur}px`, "--glass-tint": glassTint, "--glass-border": String(glassBorder / 100), "--glass-radius": `${glassRadius}px` } as React.CSSProperties;
+  const glassStyle = { "--glass-alpha": String(glassOpacity / 100), "--glass-blur": `${glassBlur}px`, "--glass-tint": glassTint, "--glass-border": String(glassBorder / 100), "--glass-radius": `${glassRadius}px`, "--text-scale": String(textScale / 100) } as React.CSSProperties;
 
   return <div className={`app-shell glass-${glassMode}`} style={glassStyle}>
     <div className="background-layer" style={{ ...background, opacity: bgMode === "default" ? 1 : bgOpacity / 100, filter: bgBlur ? `blur(${bgBlur}px)` : undefined }} />
