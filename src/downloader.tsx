@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -29,7 +30,7 @@ function Downloader() {
 
     void invoke("download_latest_app")
       .then(() => {
-        window.close();
+        void getCurrentWindow().close();
       })
       .catch(reason => {
         setError(reason instanceof Error ? reason.message : String(reason));
