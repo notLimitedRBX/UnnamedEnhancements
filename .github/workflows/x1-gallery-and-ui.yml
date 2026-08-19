@@ -18,10 +18,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install image tools
-        run: python -m pip install --disable-pip-version-check pillow beautifulsoup4 requests
+      - name: Install image and UI tools
+        run: |
+          python -m pip install --disable-pip-version-check pillow beautifulsoup4 requests rembg onnxruntime
 
-      - name: Download white X1 mouse-only images
+      - name: Download white X1 mouse-only images and remove backgrounds
         run: |
           python - <<'PY'
           import json
@@ -31,6 +32,7 @@ jobs:
           from bs4 import BeautifulSoup
           from PIL import Image
           from io import BytesIO
+          from rembg import remove
 
           page_url = 'https://attackshark.com/products/attack-shark-x1-wireless-gaming-mouse-with-magnetic-charging-dock-paw3395pro'
           headers = {'User-Agent': 'Mozilla/5.0'}
@@ -59,45 +61,28 @@ jobs:
 
           out_dir = Path('public/assets/x1')
           out_dir.mkdir(parents=True, exist_ok=True)
+          for old in out_dir.glob('attack-shark-x1-*.png'):
+              old.unlink()
           saved = []
-
-          def remove_connected_white_bg(image):
-              image = image.convert('RGBA')
-              if image.getchannel('A').getextrema() != (255, 255):
-                  return image
-              px = image.load(); w, h = image.size
-              seen = set(); stack = []
-              for x in range(w):
-                  stack.extend(((x, 0), (x, h - 1)))
-              for y in range(h):
-                  stack.extend(((0, y), (w - 1, y)))
-              while stack:
-                  x, y = stack.pop()
-                  if (x, y) in seen or not (0 <= x < w and 0 <= y < h):
-                      continue
-                  r, g, b, _ = px[x, y]
-                  if min(r, g, b) < 238 or max(r, g, b) - min(r, g, b) > 12:
-                      continue
-                  seen.add((x, y))
-                  stack.extend(((x+1,y),(x-1,y),(x,y+1),(x,y-1)))
-              for x, y in seen:
-                  px[x, y] = (255, 255, 255, 0)
-              return image
 
           for url in candidates:
               try:
                   response = requests.get(url, headers=headers, timeout=30)
                   response.raise_for_status()
-                  image = remove_connected_white_bg(Image.open(BytesIO(response.content)))
-                  bbox = image.getbbox()
+                  source = Image.open(BytesIO(response.content)).convert('RGBA')
+                  # Use foreground segmentation rather than white flood-fill so
+                  # the white X1 shell remains intact while the photo background,
+                  # dock/props and surrounding scene are removed.
+                  cutout = Image.open(BytesIO(remove(source))).convert('RGBA')
+                  bbox = cutout.getbbox()
                   if not bbox:
                       continue
-                  image = image.crop(bbox)
-                  if image.width < 120 or image.height < 100:
+                  cutout = cutout.crop(bbox)
+                  if cutout.width < 120 or cutout.height < 100:
                       continue
-                  margin = 24
-                  canvas = Image.new('RGBA', (image.width + margin*2, image.height + margin*2), (0,0,0,0))
-                  canvas.alpha_composite(image, (margin, margin))
+                  margin = 28
+                  canvas = Image.new('RGBA', (cutout.width + margin*2, cutout.height + margin*2), (0,0,0,0))
+                  canvas.alpha_composite(cutout, (margin, margin))
                   if canvas.getchannel('A').getextrema()[0] != 0:
                       continue
                   name = f'attack-shark-x1-{len(saved)+1}.png'
@@ -122,7 +107,7 @@ jobs:
           print('Generated:', saved)
           PY
 
-      - name: Add X1 image arrows to the app
+      - name: Add X1 gallery and independent text size control
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -135,36 +120,51 @@ jobs:
           )
 
           anchor = '  const [polling, setPolling] = useState("1000 Hz");\n'
-          replacement = anchor + '  const [mouseAssetIndex, setMouseAssetIndex] = useState(() => Number(localStorage.getItem("unnamed-x1-image-index") || 0));\n  const mouseAssets = ["/assets/x1/attack-shark-x1-1.png", "/assets/x1/attack-shark-x1-2.png", "/assets/x1/attack-shark-x1-3.png", "/assets/x1/attack-shark-x1-4.png"];\n'
-          if anchor in text and 'mouseAssetIndex' not in text:
-              text = text.replace(anchor, replacement, 1)
+          if 'textScale' not in text:
+              text = text.replace(anchor, anchor + '  const [textScale, setTextScale] = useState(() => Number(localStorage.getItem("unnamed-text-scale") || 100));\n', 1)
+          if 'mouseAssetIndex' not in text:
+              text = text.replace(anchor, anchor + '  const [mouseAssetIndex, setMouseAssetIndex] = useState(() => Number(localStorage.getItem("unnamed-x1-image-index") || 0));\n  const mouseAssets = ["/assets/x1/attack-shark-x1-1.png", "/assets/x1/attack-shark-x1-2.png", "/assets/x1/attack-shark-x1-3.png", "/assets/x1/attack-shark-x1-4.png"];\n', 1)
 
           anchor = '  useEffect(() => () => { if (dpiTimer.current) clearTimeout(dpiTimer.current); }, []);\n'
-          replacement = anchor + '  useEffect(() => { localStorage.setItem("unnamed-x1-image-index", String(mouseAssetIndex)); }, [mouseAssetIndex]);\n'
-          if anchor in text and 'unnamed-x1-image-index' not in text:
-              text = text.replace(anchor, replacement, 1)
+          if 'unnamed-text-scale' not in text:
+              text = text.replace(anchor, anchor + '  useEffect(() => { localStorage.setItem("unnamed-text-scale", String(textScale)); localStorage.setItem("unnamed-x1-image-index", String(mouseAssetIndex)); }, [textScale, mouseAssetIndex]);\n', 1)
 
+          # Prefer the gallery markup when it is already present; otherwise replace the old single-image markup.
           old = '<div className="mouse-illustration"><img src="/assets/attack-shark-x1.png" alt="White Attack Shark X1" onError={e => { e.currentTarget.style.display = "none"; }}/></div>'
           new = '<div className="mouse-illustration"><button className="mouse-image-arrow left" type="button" aria-label="Previous mouse image" onClick={() => setMouseAssetIndex(i => (i - 1 + mouseAssets.length) % mouseAssets.length)}><ChevronLeft size={18}/></button><img src={mouseAssets[mouseAssetIndex % mouseAssets.length]} alt="White Attack Shark X1"/><button className="mouse-image-arrow right" type="button" aria-label="Next mouse image" onClick={() => setMouseAssetIndex(i => (i + 1) % mouseAssets.length)}><ChevronRight size={18}/></button><div className="mouse-image-count">{(mouseAssetIndex % mouseAssets.length) + 1} / {mouseAssets.length}</div></div>'
           if old in text:
               text = text.replace(old, new, 1)
-          else:
-              raise SystemExit('Could not find the existing mouse image markup in App.tsx')
 
+          if 'Text size' not in text:
+              settings_anchor = '<div className="scale-presets">'
+              first = text.find(settings_anchor)
+              if first != -1:
+                  # Insert an independent text-size slider immediately after the interface-scale presets.
+                  end = text.find('</div>', first)
+                  insert_at = end + len('</div>') if end != -1 else -1
+                  if insert_at != -1:
+                      control = '<div className="scale-control text-scale-control"><span>Text size</span><input type="range" min="85" max="140" step="5" value={textScale} onChange={e => setTextScale(Number(e.target.value))}/><b className="scale-value">{textScale}%</b></div><div className="scale-presets">{[90,100,110,120,130,140].map(v => <button className={textScale === v ? "selected" : ""} key={v} onClick={() => setTextScale(v)} type="button">{v}%</button>)}</div>'
+                      text = text[:insert_at] + control + text[insert_at:]
+
+          # Add the text-scale variable to the root style object.
+          text = text.replace('"--glass-radius": `${glassRadius}px`', '"--glass-radius": `${glassRadius}px`, "--text-scale": String(textScale / 100)')
           p.write_text(text)
           PY
 
-      - name: Style minimalist image arrows
+      - name: Style gallery and text scaling
         run: |
           cat >> src/appearance.css <<'CSS'
 
+          .ui-scale-layer{font-size:calc(1em * var(--text-scale,1));}
+          .ui-scale-layer h1{font-size:calc(22px * var(--text-scale,1));}
+          .ui-scale-layer h2{font-size:calc(15px * var(--text-scale,1));}
+          .ui-scale-layer p,.ui-scale-layer button,.ui-scale-layer select,.ui-scale-layer input,.ui-scale-layer label,.ui-scale-layer span,.ui-scale-layer small,.ui-scale-layer strong,.ui-scale-layer .eyebrow,.ui-scale-layer .device-meta{font-size:calc(1em * var(--text-scale,1));}
+          .text-scale-control{margin-top:12px;}
           .mouse-illustration{position:relative;display:flex;align-items:center;justify-content:center;overflow:visible;padding:8px 38px;}
           .mouse-illustration img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 20px 28px rgba(0,0,0,.22));}
-          .mouse-image-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:30px;height:30px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.18);border-radius:999px;background:rgba(20,22,26,.55);color:rgba(255,255,255,.78);backdrop-filter:blur(12px);cursor:pointer;transition:background .14s,border-color .14s,color .14s,transform .14s;}
+          .mouse-image-arrow{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:30px;height:30px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.18);border-radius:999px;background:rgba(20,22,26,.55);color:rgba(255,255,255,.78);backdrop-filter:blur(12px);cursor:pointer;}
           .mouse-image-arrow:hover{background:rgba(30,33,39,.78);border-color:rgba(255,255,255,.3);color:#fff;}
-          .mouse-image-arrow:active{transform:translateY(-50%) scale(.94);}
-          .mouse-image-arrow.left{left:2px;}
-          .mouse-image-arrow.right{right:2px;}
+          .mouse-image-arrow.left{left:2px;}.mouse-image-arrow.right{right:2px;}
           .mouse-image-count{position:absolute;bottom:2px;left:50%;transform:translateX(-50%);font-size:8px;color:rgba(255,255,255,.55);padding:3px 6px;border:1px solid rgba(255,255,255,.12);background:rgba(16,18,22,.42);border-radius:999px;backdrop-filter:blur(10px);}
           CSS
 
@@ -174,6 +174,6 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add public/assets/x1 src/App.tsx src/appearance.css
           git diff --cached --quiet && exit 0
-          git commit -m 'Add white X1 mouse image gallery and arrows'
+          git commit -m 'Improve X1 cutout and add text size control'
           git pull --rebase origin main
           git push origin HEAD:main
