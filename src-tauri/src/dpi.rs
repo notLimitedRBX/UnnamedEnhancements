@@ -3,8 +3,10 @@ use serde::Serialize;
 
 const X1_VENDOR_ID: u16 = 0x3151;
 const X1_PRODUCT_ID: u16 = 0x5031;
-const REPORT_ID: u8 = 0x04;
+const PROTOCOL_COMMAND: u8 = 0x04;
 const PAYLOAD_LEN: usize = 56;
+const HID_FEATURE_DATA_LEN: usize = 64;
+const CONFIG_INTERFACE: i32 = 2;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,111 +69,101 @@ pub fn inspect_dpi_hardware() -> Result<Vec<HidDiagnostic>, String> {
     Ok(diagnostics)
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-pub fn set_dpi(dpi: u16) -> Result<(), String> {
-    let dpi = dpi.clamp(50, 40_000);
-    let payload = build_payload(dpi);
-    let mut report = [0u8; PAYLOAD_LEN + 1];
-    report[0] = REPORT_ID;
-    report[1..].copy_from_slice(&payload);
-
-    let api = HidApi::new().map_err(|e| format!("Could not initialise HID: {e}"))?;
-    let mut candidates = api.device_list()
-        .filter(|device| device.vendor_id() == X1_VENDOR_ID && device.product_id() == X1_PRODUCT_ID)
-        .map(|device| (device.path().to_owned(), device.interface_number(), device.usage_page()))
-        .collect::<Vec<_>>();
-
-    if candidates.is_empty() {
-        return Err("Attack Shark X1 HID interface was not found. Connect the mouse by USB or its 2.4 GHz receiver and try again.".into());
+fn hex(bytes: &[upub fn set_dpi(dpi: u16) -> Result<(), String> {
+    if !(50..=10_000).contains(&dpi) {
+        return Err("Hardware DPI verification is currently limited to 50–10,000 DPI.".to_string());
     }
 
-    candidates.sort_by_key(|(_, interface, usage_page)| {
-        (if *interface == 2 { 0 } else { 1 }, if *usage_page >= 0xff00 { 0 } else { 1 })
-    });
+    let packet = build_payload(dpi);
+    // Interface 2 exposes one unnumbered, 64-byte feature report. hidapi expects
+    // its leading byte to be the report ID, so zero represents the unnumbered report.
+    let mut report = [0u8; HID_FEATURE_DATA_LEN + 1];
+    report[1..1 + PAYLOAD_LEN].copy_from_slice(&packet);
 
-    let mut last_error = String::from("No compatible X1 HID interface accepted the DPI report.");
+    let api = HidApi::new().map_err(|error| format!("Could not initialize HID: {error}"))?;
+    let path = api
+        .device_list()
+        .find(|device| {
+            device.vendor_id() == X1_VENDOR_ID
+                && device.product_id() == X1_PRODUCT_ID
+                && device.interface_number() == CONFIG_INTERFACE
+                && device.usage_page() == 0xffff
+                && device.usage() == 0x0002
+        })
+        .map(|device| device.path().to_owned())
+        .ok_or_else(|| {
+            "Mouse configuration interface was not found. Reconnect the receiver and try again."
+                .to_string()
+        })?;
 
-    for (path, _, _) in candidates {
-        let device = match api.open_path(&path) {
-            Ok(device) => device,
-            Err(error) => {
-                last_error = format!("Could not open X1 HID interface: {error}");
-                continue;
-            }
-        };
+    let device = api
+        .open_path(&path)
+        .map_err(|error| format!("Could not open the mouse configuration interface: {error}"))?;
 
-        // hidapi's send_feature_report returns Result<(), HidError>, not the
-        // number of bytes written. A successful call means Windows accepted
-        // the complete feature report.
-        match device.send_feature_report(&report) {
-            Ok(()) => return Ok(()),
-            Err(error) => last_error = format!("HID feature report failed: {error}"),
-        }
-    }
+    device.send_feature_report(&report).map_err(|error| {
+        format!("Could not send the DPI configuration to the mouse: {error}")
+    })?;
 
-    Err(last_error)
+    Ok(())
 }
 
 fn build_payload(dpi: u16) -> [u8; PAYLOAD_LEN] {
     let mut report = [0u8; PAYLOAD_LEN];
-    let dpi = dpi.clamp(50, 40_000);
 
-    report[0] = REPORT_ID;
+    // The vendor protocol packet is carried inside the unnumbered HID feature data.
+    report[0] = PROTOCOL_COMMAND;
     report[1] = 0x38;
     report[2] = 0x01;
-    report[3] = 0x00;
-    report[4] = 0x01;
-    report[5] = 0x3f;
+    report[3] = 0x00; // angle snapping disabled
+    report[4] = 0x01; // ripple lighting enabled
+    report[5] = 0x3f; // six active DPI stages
 
     let stages = [dpi, 1600, 2400, 3200, 5000, 8000];
-    let mut stage_mask = 0u8;
-    for (index, stage_dpi) in stages.iter().enumerate() {
-        let (encoded, high) = encode_dpi(*stage_dpi);
-        report[8 + index] = encoded;
-        report[16 + index] = if high { 1 } else { 0 };
-        if *stage_dpi > 12_000 { stage_mask |= 1 << index; }
+    for (index, stage) in stages.iter().enumerate() {
+        let (x, y) = encode_dpi(*stage);
+        report[8 + index] = x;
+        report[16 + index] = y;
     }
 
-    report[6] = stage_mask;
-    report[7] = stage_mask;
-    report[24] = 1;
-
+    report[24] = 0x01; // keep the first DPI stage selected
     let colors = [
-        (0xff, 0x00, 0x00), (0x00, 0xff, 0x00), (0x00, 0x00, 0xff),
-        (0xff, 0xff, 0x00), (0x00, 0xff, 0xff), (0xff, 0x00, 0xff),
-        (0xff, 0x40, 0x00), (0xff, 0xff, 0xff),
+        (0xff, 0x00, 0x00),
+        (0xff, 0x80, 0x00),
+        (0xff, 0xff, 0x00),
+        (0x00, 0xff, 0x00),
+        (0x00, 0x00, 0xff),
+        (0x80, 0x00, 0xff),
     ];
-    for (index, (r, g, b)) in colors.iter().enumerate() {
-        report[25 + index * 3] = *r;
-        report[26 + index * 3] = *g;
-        report[27 + index * 3] = *b;
+    for (index, (red, green, blue)) in colors.iter().enumerate() {
+        let offset = 25 + index * 4;
+        report[offset] = *red;
+        report[offset + 1] = *green;
+        report[offset + 2] = *blue;
     }
 
-    report[49] = 0x01;
-    let checksum: u16 = report[3..50].iter().map(|value| *value as u16).sum();
-    report[50] = (checksum >> 8) as u8;
-    report[51] = checksum as u8;
+    report[49] = 0x02;
+    let checksum = report[3..50]
+        .iter()
+        .fold(0u16, |sum, byte| sum.wrapping_add(*byte as u16));
+    report[50] = (checksum & 0xff) as u8;
+    report[51] = (checksum >> 8) as u8;
+
     report
 }
 
-fn encode_dpi(dpi: u16) -> (u8, bool) {
-    let dpi = dpi.clamp(50, 40_000);
-    if dpi <= 10_000 {
-        let index = (dpi / 50).saturating_sub(1) as usize;
-        return (DPI_MAP[index.min(DPI_MAP.len() - 1)], false);
-    }
+fn encode_dpi(dpi: u16) -> (u8, u8) {
+    let dpi = dpi.clamp(50, 10_000);
 
-    let dpi = dpi.min(22_000);
-    if dpi <= 12_000 {
-        let value = 199u16 + ((dpi.saturating_sub(10_100)) / 100);
-        return ((value & 0xff) as u8, true);
+    if dpi > 5000 && dpi % 100 == 0 {
+        let index = (dpi / 100).saturating_sub(1) as usize;
+        (DPI_MAP[index.min(DPI_MAP.len() - 1)], 0x01)
+    } else {
+        let index = (dpi.saturating_sub(50) / 50) as usize;
+        (DPI_MAP[index.min(DPI_MAP.len() - 1)], 0x00)
     }
-    if dpi >= 20_100 {
-        let value = 199u16 + ((dpi - 20_100) / 100);
-        return ((value & 0xff) as u8, true);
+}
+
+ ((value & 0xff) as u8, true);
     }
     (DPI_MAP[DPI_MAP.len() - 1], false)
 }
