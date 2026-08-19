@@ -35,6 +35,54 @@ const loadProfiles = (): Profile[] => {
   return [makeProfile("Default"), makeProfile("Gaming"), makeProfile("FPS")];
 };
 
+const backgroundStore = "unnamed-appearance";
+const backgroundKey = "current-background";
+const openBackgroundStore = () => new Promise<IDBDatabase>((resolve, reject) => {
+  const request = indexedDB.open(backgroundStore, 1);
+  request.onupgradeneeded = () => request.result.createObjectStore("images");
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error);
+});
+const readBackground = async () => {
+  const db = await openBackgroundStore();
+  return new Promise<string>((resolve, reject) => {
+    const request = db.transaction("images", "readonly").objectStore("images").get(backgroundKey);
+    request.onsuccess = () => resolve(typeof request.result === "string" ? request.result : "");
+    request.onerror = () => reject(request.error);
+  });
+};
+const writeBackground = async (image: string) => {
+  const db = await openBackgroundStore();
+  await new Promise<void>((resolve, reject) => {
+    const request = db.transaction("images", "readwrite").objectStore("images")[image ? "put" : "delete"](image || backgroundKey, backgroundKey);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+const readAsDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result));
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(file);
+});
+const prepareBackground = async (file: File) => {
+  const original = await readAsDataUrl(file);
+  const image = new Image();
+  await new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(new Error("Could not read that image.")); image.src = original; });
+  const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
+  if (longestSide >= 2560) return original;
+  const scale = 2560 / longestSide;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(image.naturalWidth * scale);
+  canvas.height = Math.round(image.naturalHeight * scale);
+  const context = canvas.getContext("2d");
+  if (!context) return original;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/webp", 0.94);
+};
+
 function hex(value: string, fallback: string) {
   const clean = value.trim().replace(/^#/, "");
   if (/^[0-9a-f]{6}$/i.test(clean)) return `#${clean.toUpperCase()}`;
@@ -69,10 +117,13 @@ export default function App() {
   const [bgColor, setBgColor] = useState(() => localStorage.getItem("unnamed-bg-color") || "#101112");
   const [gradA, setGradA] = useState(() => localStorage.getItem("unnamed-bg-gradient-from") || "#101112");
   const [gradB, setGradB] = useState(() => localStorage.getItem("unnamed-bg-gradient-to") || "#202124");
-  const [bgImage, setBgImage] = useState(() => localStorage.getItem("unnamed-bg-image") || "");
+  const [bgImage, setBgImage] = useState("");
+  const [backgroundReady, setBackgroundReady] = useState(false);
   const [fit, setFit] = useState<ImageFit>(() => (localStorage.getItem("unnamed-bg-fit") as ImageFit) || "cover");
+  const [bgFocus, setBgFocus] = useState(() => localStorage.getItem("unnamed-bg-focus") || "center");
   const [bgOpacity, setBgOpacity] = useState(() => Number(localStorage.getItem("unnamed-bg-opacity") || 100));
   const [bgBlur, setBgBlur] = useState(() => Number(localStorage.getItem("unnamed-bg-blur") || 0));
+  const [bgSaturation, setBgSaturation] = useState(() => Number(localStorage.getItem("unnamed-bg-saturation") || 100));
   const [uiScale, setUiScale] = useState(() => Number(localStorage.getItem("unnamed-ui-scale") || 100));
 
   const [glassMode, setGlassMode] = useState<GlassMode>(() => (localStorage.getItem("unnamed-glass-mode") as GlassMode) || "regular");
@@ -82,8 +133,9 @@ export default function App() {
   const [glassBorder, setGlassBorder] = useState(() => Number(localStorage.getItem("unnamed-glass-border") || 42));
   const [glassRadius, setGlassRadius] = useState(() => Number(localStorage.getItem("unnamed-glass-radius") || 16));
 
-  useEffect(() => { localStorage.setItem("unnamed-bg-mode", bgMode); localStorage.setItem("unnamed-bg-color", bgColor); localStorage.setItem("unnamed-bg-gradient-from", gradA); localStorage.setItem("unnamed-bg-gradient-to", gradB); localStorage.setItem("unnamed-bg-fit", fit); localStorage.setItem("unnamed-bg-opacity", String(bgOpacity)); localStorage.setItem("unnamed-bg-blur", String(bgBlur)); localStorage.setItem("unnamed-ui-scale", String(uiScale)); localStorage.setItem("unnamed-glass-mode", glassMode); localStorage.setItem("unnamed-glass-opacity", String(glassOpacity)); localStorage.setItem("unnamed-glass-blur", String(glassBlur)); localStorage.setItem("unnamed-glass-tint", glassTint); localStorage.setItem("unnamed-glass-border", String(glassBorder)); localStorage.setItem("unnamed-glass-radius", String(glassRadius)); localStorage.setItem("unnamed-text-scale", String(textScale)); }, [bgMode,bgColor,gradA,gradB,fit,bgOpacity,bgBlur,uiScale,textScale,glassMode,glassOpacity,glassBlur,glassTint,glassBorder,glassRadius]);
-  useEffect(() => { if (bgImage) localStorage.setItem("unnamed-bg-image", bgImage); else localStorage.removeItem("unnamed-bg-image"); }, [bgImage]);
+  useEffect(() => { localStorage.setItem("unnamed-bg-mode", bgMode); localStorage.setItem("unnamed-bg-color", bgColor); localStorage.setItem("unnamed-bg-gradient-from", gradA); localStorage.setItem("unnamed-bg-gradient-to", gradB); localStorage.setItem("unnamed-bg-fit", fit); localStorage.setItem("unnamed-bg-focus", bgFocus); localStorage.setItem("unnamed-bg-opacity", String(bgOpacity)); localStorage.setItem("unnamed-bg-blur", String(bgBlur)); localStorage.setItem("unnamed-bg-saturation", String(bgSaturation)); localStorage.setItem("unnamed-ui-scale", String(uiScale)); localStorage.setItem("unnamed-glass-mode", glassMode); localStorage.setItem("unnamed-glass-opacity", String(glassOpacity)); localStorage.setItem("unnamed-glass-blur", String(glassBlur)); localStorage.setItem("unnamed-glass-tint", glassTint); localStorage.setItem("unnamed-glass-border", String(glassBorder)); localStorage.setItem("unnamed-glass-radius", String(glassRadius)); localStorage.setItem("unnamed-text-scale", String(textScale)); }, [bgMode,bgColor,gradA,gradB,fit,bgFocus,bgOpacity,bgBlur,bgSaturation,uiScale,textScale,glassMode,glassOpacity,glassBlur,glassTint,glassBorder,glassRadius]);
+  useEffect(() => { let active = true; void readBackground().then(image => { if (active) setBgImage(image); }).catch(() => undefined).finally(() => { if (active) setBackgroundReady(true); }); return () => { active = false; }; }, []);
+  useEffect(() => { if (backgroundReady) void writeBackground(bgImage).catch(() => setError("Could not save that background image.")); }, [bgImage, backgroundReady]);
   useEffect(() => {
     if (!activeProfile) return;
     if (profile !== activeProfile.id) setProfile(activeProfile.id);
@@ -114,17 +166,17 @@ export default function App() {
   const deleteProfile = (item: Profile) => { if (profiles.length === 1) return setError("Keep at least one profile."); if (!window.confirm(`Delete "${item.name}"?`)) return; const remaining = profiles.filter(other => other.id !== item.id); setProfiles(remaining); if (profile === item.id) setProfile(remaining[0].id); };
   const inspectDpiHardware = async () => { setError(null); setDpiDiagnostics(null); try { const result = await invoke("inspect_dpi_hardware"); setDpiDiagnostics(JSON.stringify(result, null, 2)); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } };
 
-  const importBackground = (event: React.ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; if (!/^image\/(png|jpeg|webp)$/i.test(file.type)) return setError("Use PNG, JPG/JPEG, or WebP."); if (file.size > 8 * 1024 * 1024) return setError("Background images must be 8 MB or smaller."); const reader = new FileReader(); reader.onload = () => { setBgImage(String(reader.result)); setBgMode("image"); setError(null); }; reader.readAsDataURL(file); event.target.value = ""; };
-  const resetAppearance = () => { setBgMode("default"); setBgImage(""); setBgOpacity(100); setBgBlur(0); setGlassMode("regular"); setGlassOpacity(64); setGlassBlur(22); setGlassTint("#15171B"); setGlassBorder(42); setGlassRadius(16); setUiScale(100); setTextScale(100); };
+  const importBackground = async (event: React.ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; if (!/^image\/(png|jpeg|webp)$/i.test(file.type)) return setError("Use PNG, JPG/JPEG, or WebP."); if (file.size > 40 * 1024 * 1024) return setError("Background images must be 40 MB or smaller."); setError(null); try { setBgImage(await prepareBackground(file)); setBgMode("image"); } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not prepare that image."); } finally { event.target.value = ""; } };
+  const resetAppearance = () => { setBgMode("default"); setBgImage(""); setBgFocus("center"); setBgOpacity(100); setBgBlur(0); setBgSaturation(100); setGlassMode("regular"); setGlassOpacity(64); setGlassBlur(22); setGlassTint("#15171B"); setGlassBorder(42); setGlassRadius(16); setUiScale(100); setTextScale(100); };
 
   const mouse = mice.find(m => m.connected) ?? mice[0];
   const connected = Boolean(mouse?.connected);
-  const background: React.CSSProperties = bgMode === "solid" ? { background: bgColor } : bgMode === "gradient" ? { background: `linear-gradient(135deg, ${gradA}, ${gradB})` } : bgMode === "image" && bgImage ? { backgroundImage: `url(${bgImage})`, backgroundSize: fit === "stretch" ? "100% 100%" : fit, backgroundPosition: "center", backgroundRepeat: "no-repeat" } : { background: "#101112" };
+  const background: React.CSSProperties = bgMode === "solid" ? { background: bgColor } : bgMode === "gradient" ? { background: `linear-gradient(135deg, ${gradA}, ${gradB})` } : bgMode === "image" && bgImage ? { backgroundImage: `url(${bgImage})`, backgroundSize: fit === "stretch" ? "100% 100%" : fit, backgroundPosition: bgFocus, backgroundRepeat: "no-repeat" } : { background: "#101112" };
 
   const glassStyle = { "--glass-alpha": String(glassOpacity / 100), "--glass-blur": `${glassBlur}px`, "--glass-tint": glassTint, "--glass-border": String(glassBorder / 100), "--glass-radius": `${glassRadius}px`, "--text-scale": String(textScale / 100) } as React.CSSProperties;
 
   return <div className={`app-shell glass-${glassMode}`} style={glassStyle}>
-    <div className="background-layer" style={{ ...background, opacity: bgMode === "default" ? 1 : bgOpacity / 100, filter: bgBlur ? `blur(${bgBlur}px)` : undefined }} />
+    <div className="background-layer" style={{ ...background, opacity: bgMode === "default" ? 1 : bgOpacity / 100, filter: `${bgBlur ? `blur(${bgBlur}px) ` : ""}saturate(${bgSaturation}%)` }} />
     <div className="background-shade" />
     <div className="ui-scale-layer" style={{ "--ui-scale": uiScale / 100 } as React.CSSProperties}>
       <aside className="sidebar glass-surface">
@@ -145,7 +197,7 @@ export default function App() {
           <div className="appearance-section"><h3>Background</h3><div className="background-mode-grid">{([["default","Default"],["solid","Solid colour"],["gradient","Gradient"],["image","Image"]] as [BackgroundMode,string][]).map(([mode,label]) => <button className={`background-mode glass-control ${bgMode === mode ? "selected" : ""}`} key={mode} onClick={() => setBgMode(mode)} type="button"><Palette size={17}/><span>{label}</span></button>)}</div>
           {bgMode === "solid" && <div className="background-control"><HexColor label="Colour" value={bgColor} onChange={setBgColor}/></div>}
           {bgMode === "gradient" && <div className="gradient-controls background-control"><HexColor label="Start" value={gradA} onChange={setGradA}/><HexColor label="End" value={gradB} onChange={setGradB}/></div>}
-          {bgMode === "image" && <><div className="import-box glass-control"><label className="import-button"><Upload size={15}/> Import image<input className="file-input" type="file" accept="image/png,image/jpeg,image/webp" onChange={importBackground}/></label><span>PNG, JPG/JPEG or WebP · max 8 MB</span></div><div className="image-controls"><label>Fit<select value={fit} onChange={e => setFit(e.target.value as ImageFit)}><option value="cover">Cover</option><option value="contain">Contain</option><option value="stretch">Stretch</option></select></label><label>Background opacity <b>{bgOpacity}%</b><input type="range" min="20" max="100" value={bgOpacity} onChange={e => setBgOpacity(Number(e.target.value))}/></label><label>Background blur <b>{bgBlur}px</b><input type="range" min="0" max="24" value={bgBlur} onChange={e => setBgBlur(Number(e.target.value))}/></label></div></>}
+          {bgMode === "image" && <><div className="import-box glass-control"><label className="import-button"><Upload size={15}/> Import image<input className="file-input" type="file" accept="image/png,image/jpeg,image/webp" onChange={importBackground}/></label><span>PNG, JPG/JPEG or WebP · max 40 MB · smaller images are high-quality scaled to 2560px</span></div><div className="image-controls"><label>Fit<select value={fit} onChange={e => setFit(e.target.value as ImageFit)}><option value="cover">Cover</option><option value="contain">Contain</option><option value="stretch">Stretch</option></select></label><label>Focus<select value={bgFocus} onChange={e => setBgFocus(e.target.value)}><option value="center">Centre</option><option value="top">Top</option><option value="bottom">Bottom</option><option value="left">Left</option><option value="right">Right</option></select></label><label>Background opacity <b>{bgOpacity}%</b><input type="range" min="20" max="100" value={bgOpacity} onChange={e => setBgOpacity(Number(e.target.value))}/></label><label>Background blur <b>{bgBlur}px</b><input type="range" min="0" max="24" value={bgBlur} onChange={e => setBgBlur(Number(e.target.value))}/></label><label>Image saturation <b>{bgSaturation}%</b><input type="range" min="0" max="160" value={bgSaturation} onChange={e => setBgSaturation(Number(e.target.value))}/></label></div></>}
           </div>
           <div className="appearance-section"><h3>Liquid Glass</h3><p className="appearance-note">The glass layer is separate from the background, so you can reveal more or less of your image without changing its scale.</p><div className="glass-presets"><button className={glassMode === "regular" ? "selected" : ""} onClick={() => setGlassMode("regular")} type="button">Regular</button><button className={glassMode === "clear" ? "selected" : ""} onClick={() => setGlassMode("clear")} type="button">Clear</button></div><div className="glass-controls-grid"><label>UI transparency <b>{100-glassOpacity}%</b><input type="range" min="18" max="82" value={glassOpacity} onChange={e => setGlassOpacity(Number(e.target.value))}/></label><label>Glass blur <b>{glassBlur}px</b><input type="range" min="4" max="40" value={glassBlur} onChange={e => setGlassBlur(Number(e.target.value))}/></label><label>Glass tint <HexColor label="" value={glassTint} onChange={setGlassTint}/></label><label>Border strength <b>{glassBorder}%</b><input type="range" min="10" max="80" value={glassBorder} onChange={e => setGlassBorder(Number(e.target.value))}/></label><label>Corner radius <b>{glassRadius}px</b><input type="range" min="8" max="28" value={glassRadius} onChange={e => setGlassRadius(Number(e.target.value))}/></label></div></div>
           <div className="appearance-section"><h3>Interface scale</h3><div className="scale-row"><span>Layout</span><input type="range" min="75" max="125" step="5" value={uiScale} onChange={e => setUiScale(Number(e.target.value))}/><b>{uiScale}%</b></div><div className="scale-row text-scale-control"><span>Text</span><input type="range" min="85" max="125" step="5" value={textScale} onChange={e => setTextScale(Number(e.target.value))}/><b>{textScale}%</b></div></div>
