@@ -54,7 +54,8 @@ const readBackground = async () => {
 const writeBackground = async (image: string) => {
   const db = await openBackgroundStore();
   await new Promise<void>((resolve, reject) => {
-    const request = db.transaction("images", "readwrite").objectStore("images")[image ? "put" : "delete"](image || backgroundKey, backgroundKey);
+    const store = db.transaction("images", "readwrite").objectStore("images");
+    const request = image ? store.put(image, backgroundKey) : store.delete(backgroundKey);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
   });
