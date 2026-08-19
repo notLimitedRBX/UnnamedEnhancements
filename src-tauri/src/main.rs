@@ -77,6 +77,28 @@ fn set_minimize_to_tray(enabled: bool, state: tauri::State<'_, TrayState>) {
     state.minimize_to_tray.store(enabled, Ordering::Relaxed);
 }
 
+#[tauri::command]
+fn test_button_action(action: String, target: Option<String>) -> Result<(), String> {
+    let command = match action.as_str() {
+        "Open File Explorer" => ("explorer.exe".to_string(), None),
+        "Open Task Manager" => ("taskmgr.exe".to_string(), None),
+        "Open Windows Settings" => ("explorer.exe".to_string(), Some("ms-settings:".to_string())),
+        "Custom program" => {
+            let target = target.map(|value| value.trim().to_string()).filter(|value| !value.is_empty())
+                .ok_or_else(|| "Enter a program path before testing a custom program action.".to_string())?;
+            (target, None)
+        }
+        "Default" | "Disabled" => return Err("This action has nothing to test.".to_string()),
+        "Back" | "Forward" | "DPI Up" | "DPI Down" => return Err("This action is saved in the profile. Hardware button output needs the X1 button-protocol capture before it can be sent to the mouse.".to_string()),
+        _ => return Err("That button action is not supported yet.".to_string()),
+    };
+
+    let mut process = Command::new(&command.0);
+    if let Some(argument) = command.1 { process.arg(argument); }
+    process.spawn().map_err(|error| format!("Could not start this action: {error}"))?;
+    Ok(())
+}
+
 fn is_relevant_mouse(mouse: &MouseDevice) -> bool {
     const GAMING_BRANDS: &[&str] = &[
         "attack shark", "logitech", "razer", "steelseries", "corsair", "glorious",
@@ -319,7 +341,7 @@ fn main() {
     tauri::Builder::default()
         .manage(TrayState { minimize_to_tray: AtomicBool::new(true) })
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, set_dpi, set_minimize_to_tray, download_latest_app])
+        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, set_dpi, set_minimize_to_tray, test_button_action, download_latest_app])
         .on_page_load(|window, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                 let script = r#"(() => {
