@@ -27,10 +27,14 @@ function Downloader() {
       setStatus("Download unavailable");
     });
 
-    void invoke("download_latest_app").catch(reason => {
-      setError(reason instanceof Error ? reason.message : String(reason));
-      setStatus("Download unavailable");
-    });
+    void invoke("download_latest_app")
+      .then(() => {
+        window.close();
+      })
+      .catch(reason => {
+        setError(reason instanceof Error ? reason.message : String(reason));
+        setStatus("Download unavailable");
+      });
 
     return () => {
       disposed = true;
