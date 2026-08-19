@@ -1,9 +1,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::{
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Manager,
+};
 
 #[cfg(target_os = "windows")]
 mod dpi;
+
+#[derive(Default)]
+struct TrayState {
+    minimize_to_tray: AtomicBool,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +50,11 @@ fn set_dpi(dpi: u16) -> Result<(), String> {
         let _ = dpi;
         Err("DPI control is currently available on Windows only.".to_string())
     }
+}
+
+#[tauri::command]
+fn set_minimize_to_tray(enabled: bool, state: tauri::State<'_, TrayState>) {
+    state.minimize_to_tray.store(enabled, Ordering::Relaxed);
 }
 
 fn is_relevant_mouse(mouse: &MouseDevice) -> bool {
@@ -150,8 +165,65 @@ mod windows_mouse_detection {
 
 fn main() {
     tauri::Builder::default()
+        .manage(TrayState { minimize_to_tray: AtomicBool::new(true) })
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![detect_mice, set_dpi])
+        .invoke_handler(tauri::generate_handler![detect_mice, set_dpi, set_minimize_to_tray])
+        .on_page_load(|window, payload| {
+            if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                let script = r#"(() => {
+                    const key = 'unnamed-minimise-to-tray';
+                    const install = () => {
+                        const row = [...document.querySelectorAll('label.toggle-row')].find((el) => (el.textContent || '').includes('Minimise to tray'));
+                        const input = row?.querySelector('input[type="checkbox"]');
+                        if (!input || input.dataset.trayBound === '1') return;
+                        input.dataset.trayBound = '1';
+                        const saved = localStorage.getItem(key);
+                        if (saved !== null) input.checked = saved === 'true';
+                        const sync = () => {
+                            localStorage.setItem(key, String(input.checked));
+                            window.__TAURI_INTERNALS__?.invoke('set_minimize_to_tray', { enabled: input.checked });
+                        };
+                        input.addEventListener('change', sync);
+                        sync();
+                    };
+                    install();
+                    new MutationObserver(install).observe(document.body, { childList: true, subtree: true });
+                })();"#;
+                let _ = window.eval(script);
+            }
+        })
+        .on_tray_icon_event(|tray, event| match event {
+            TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } => {
+                if let Some(window) = tray.app_handle().get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            TrayIconEvent::Click { button: MouseButton::Right, button_state: MouseButtonState::Up, .. } => {
+                tray.app_handle().exit(0);
+            }
+            _ => {}
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let state = window.app_handle().state::<TrayState>();
+                if state.minimize_to_tray.load(Ordering::Relaxed) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
+        .setup(|app| {
+            let mut builder = TrayIconBuilder::new()
+                .show_menu_on_left_click(false)
+                .tooltip("Unnamed Desktop App");
+            if let Some(icon) = app.default_window_icon().cloned() {
+                builder = builder.icon(icon);
+            }
+            builder.build(app)?;
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
