@@ -9,6 +9,9 @@ on:
       - downloader.html
       - src/downloader.tsx
       - src/downloader.css
+      - src/App.tsx
+      - src/appearance.css
+      - src/style.css
       - src-tauri/**
       - package.json
       - vite.config.ts
