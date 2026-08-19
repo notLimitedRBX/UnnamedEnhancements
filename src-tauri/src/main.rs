@@ -80,6 +80,43 @@ fn set_minimize_to_tray(enabled: bool, state: tauri::State<'_, TrayState>) {
 }
 
 #[tauri::command]
+fn ask_local_assistant(message: String, device_context: Option<String>) -> Result<String, String> {
+    let message = message.trim();
+    if message.is_empty() { return Err("Write a question for Local AI first.".to_string()); }
+    if message.chars().count() > 4_000 { return Err("Keep each question under 4,000 characters.".to_string()); }
+    let context = device_context.unwrap_or_else(|| "No mouse is currently detected.".to_string());
+    let prompt = format!(
+        "You are Unnamed Local Assistant, a concise and helpful companion inside a Windows mouse configuration app. Help with everyday PC questions and Unnamed's mouse, buttons, profiles, DPI, and troubleshooting. Be honest about uncertainty and never claim you changed settings yourself. Current device: {context}\n\nUser: {message}"
+    );
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(90))
+        .build()
+        .map_err(|error| format!("Could not start Local AI: {error}"))?;
+    let response = client
+        .post("http://127.0.0.1:11434/api/generate")
+        .json(&serde_json::json!({
+            "model": "qwen2.5:3b-instruct",
+            "prompt": prompt,
+            "stream": false,
+            "options": { "temperature": 0.6 }
+        }))
+        .send()
+        .map_err(|_| "Local AI is not ready. Install Ollama, then run: ollama pull qwen2.5:3b-instruct".to_string())?;
+    let status = response.status();
+    let payload: serde_json::Value = response.json()
+        .map_err(|error| format!("Local AI returned an unreadable response: {error}"))?;
+    if !status.is_success() {
+        let detail = payload.get("error").and_then(serde_json::Value::as_str).unwrap_or("The local model could not answer.");
+        return Err(format!("Local AI: {detail}"));
+    }
+    payload.get("response")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)
+        .filter(|text| !text.trim().is_empty())
+        .ok_or_else(|| "Local AI returned no text answer.".to_string())
+}
+
+#[tauri::command]
 fn test_button_action(action: String, target: Option<String>) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -366,7 +403,7 @@ fn main() {
     tauri::Builder::default()
         .manage(TrayState { minimize_to_tray: AtomicBool::new(true) })
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, set_dpi, set_minimize_to_tray, test_button_action, apply_button_mappings, download_latest_app])
+        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, set_dpi, set_minimize_to_tray, test_button_action, apply_button_mappings, ask_local_assistant, download_latest_app])
         .on_page_load(|window, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                 let script = r#"(() => {
