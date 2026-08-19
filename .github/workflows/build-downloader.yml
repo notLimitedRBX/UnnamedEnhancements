@@ -1,0 +1,41 @@
+name: Build Unnamed Enhancements Downloader
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch containing the downloader
+        required: true
+        default: dpi-diagnostics
+        type: string
+
+jobs:
+  build-downloader:
+    name: Build Downloader for Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build downloader
+        run: npm run downloader:build
+
+      - name: Upload downloader build
+        uses: actions/upload-artifact@v4
+        with:
+          name: UnnamedEnhancements-Downloader-Windows
+          path: src-tauri/target/release/bundle/
