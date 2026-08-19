@@ -7,6 +7,7 @@ use std::{
     path::PathBuf,
     process::Command,
     sync::atomic::{AtomicBool, Ordering},
+    time::{Duration, Instant},
 };
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -208,8 +209,30 @@ fn emit_download_progress(app: &tauri::AppHandle, percent: u8, status: impl Into
     let _ = app.emit("download-progress", DownloadProgress { percent, status: status.into() });
 }
 
+fn finish_download_and_launch(
+    app: &tauri::AppHandle,
+    destination: &PathBuf,
+    started_at: Instant,
+) -> Result<(), String> {
+    const MINIMUM_DOWNLOAD_SCREEN: Duration = Duration::from_secs(8);
+
+    while started_at.elapsed() < MINIMUM_DOWNLOAD_SCREEN {
+        let elapsed_ms = started_at.elapsed().as_millis().min(8_000) as u64;
+        let percent = 90 + ((elapsed_ms * 9) / 8_000) as u8;
+        emit_download_progress(app, percent, "Preparing Unnamed Enhancements...");
+        std::thread::sleep(Duration::from_millis(250));
+    }
+
+    emit_download_progress(app, 100, "Launching Unnamed Enhancements...");
+    Command::new(destination)
+        .spawn()
+        .map_err(|error| format!("The app downloaded but could not be launched: {error}"))?;
+    Ok(())
+}
+
 #[tauri::command]
 fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
+    let started_at = Instant::now();
     emit_download_progress(&app, 0, "Checking for the latest version...");
 
     let client = reqwest::blocking::Client::builder()
@@ -247,11 +270,8 @@ fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
         .unwrap_or(false);
 
     if installed_version_matches && installed_file_matches {
-        emit_download_progress(&app, 100, "Already up to date. Launching...");
-        Command::new(&destination)
-            .spawn()
-            .map_err(|error| format!("The app is installed but could not be launched: {error}"))?;
-        return Ok(());
+        emit_download_progress(&app, 90, "Already up to date. Preparing...");
+        return finish_download_and_launch(&app, &destination, started_at);
     }
 
     let mut response = client
@@ -292,11 +312,7 @@ fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|error| format!("Could not finish the app download: {error}"))?;
     let _ = fs::write(&version_marker, &release_tag);
 
-    emit_download_progress(&app, 100, "Launching Unnamed Enhancements...");
-    Command::new(&destination)
-        .spawn()
-        .map_err(|error| format!("The app downloaded but could not be launched: {error}"))?;
-    Ok(())
+    finish_download_and_launch(&app, &destination, started_at)
 }
 
 fn main() {
