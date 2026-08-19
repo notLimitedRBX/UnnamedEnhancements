@@ -42,6 +42,19 @@ fn detect_mice(show_hidden: bool) -> Result<Vec<MouseDevice>, String> {
 }
 
 #[tauri::command]
+fn inspect_dpi_hardware() -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        serde_json::to_value(dpi::inspect_dpi_hardware()?)
+            .map_err(|error| format!("Could not serialise HID diagnostics: {error}"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("DPI diagnostics are currently available on Windows only.".to_string())
+    }
+}
+
+#[tauri::command]
 fn set_dpi(dpi: u16) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     { dpi::set_dpi(dpi) }
@@ -167,7 +180,7 @@ fn main() {
     tauri::Builder::default()
         .manage(TrayState { minimize_to_tray: AtomicBool::new(true) })
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![detect_mice, set_dpi, set_minimize_to_tray])
+        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, set_dpi, set_minimize_to_tray])
         .on_page_load(|window, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                 let script = r#"(() => {
