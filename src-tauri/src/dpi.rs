@@ -69,7 +69,11 @@ pub fn inspect_dpi_hardware() -> Result<Vec<HidDiagnostic>, String> {
     Ok(diagnostics)
 }
 
-fn hex(bytes: &[upub fn set_dpi(dpi: u16) -> Result<(), String> {
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+pub fn set_dpi(dpi: u16) -> Result<(), String> {
     if !(50..=10_000).contains(&dpi) {
         return Err("Hardware DPI verification is currently limited to 50–10,000 DPI.".to_string());
     }
@@ -100,9 +104,9 @@ fn hex(bytes: &[upub fn set_dpi(dpi: u16) -> Result<(), String> {
         .open_path(&path)
         .map_err(|error| format!("Could not open the mouse configuration interface: {error}"))?;
 
-    device.send_feature_report(&report).map_err(|error| {
-        format!("Could not send the DPI configuration to the mouse: {error}")
-    })?;
+    device
+        .send_feature_report(&report)
+        .map_err(|error| format!("Could not send the DPI configuration to the mouse: {error}"))?;
 
     Ok(())
 }
@@ -161,11 +165,6 @@ fn encode_dpi(dpi: u16) -> (u8, u8) {
         let index = (dpi.saturating_sub(50) / 50) as usize;
         (DPI_MAP[index.min(DPI_MAP.len() - 1)], 0x00)
     }
-}
-
- ((value & 0xff) as u8, true);
-    }
-    (DPI_MAP[DPI_MAP.len() - 1], false)
 }
 
 const DPI_MAP: [u8; 200] = [
