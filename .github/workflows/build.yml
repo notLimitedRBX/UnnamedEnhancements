@@ -1,4 +1,4 @@
-name: Build Unnamed Enhancements Preview
+name: Build Unnamed Enhancements
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ on:
       - .github/workflows/build.yml
 
 concurrency:
-  group: app-preview-${{ github.ref }}
+  group: app-release-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -71,7 +71,7 @@ jobs:
       - name: Build portable app
         run: npm run tauri build
 
-      - name: Prepare single-file Preview
+      - name: Prepare release executable
         shell: pwsh
         run: |
           $app = Get-ChildItem "src-tauri/target/release" -Filter "*.exe" | Select-Object -First 1
@@ -79,20 +79,20 @@ jobs:
           New-Item -ItemType Directory -Force -Path "release" | Out-Null
           Copy-Item -LiteralPath $app.FullName -Destination "release/UnnamedEnhancements.exe"
 
-      - name: Upload single-file Preview
+      - name: Upload release executable
         uses: actions/upload-artifact@v4
         with:
-          name: UnnamedEnhancements-Preview-Windows
+          name: UnnamedEnhancements-Windows
           path: release/UnnamedEnhancements.exe
           compression-level: 9
 
 
-      - name: Publish direct Preview download
+      - name: Publish stable release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: preview
-          name: Latest Preview
-          prerelease: true
-          make_latest: false
+          tag_name: v0.1.0
+          name: Unnamed Enhancements v0.1.0
+          prerelease: false
+          make_latest: true
           overwrite_files: true
           files: release/UnnamedEnhancements.exe
