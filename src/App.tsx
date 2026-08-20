@@ -152,6 +152,7 @@ export default function App() {
   const [mice, setMice] = useState<MouseDevice[]>([]);
   const [showOtherDevices, setShowOtherDevices] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
   const [localQuestion, setLocalQuestion] = useState("");
   const [localMessages, setLocalMessages] = useState<LocalMessage[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
@@ -301,7 +302,7 @@ export default function App() {
     });
   }, [profile, activeProfile]);
 
-  const refresh = useCallback(async () => { setLoading(true); setError(null); try { setMice(await invoke<MouseDevice[]>("detect_mice", { showHidden: showOtherDevices })); } catch (e) { setMice([]); setError(e instanceof Error ? e.message : String(e)); } finally { setLoading(false); } }, [showOtherDevices]);
+  const refresh = useCallback(async () => { setLoading(true); setError(null); try { const [detectedMice, battery] = await Promise.all([invoke<MouseDevice[]>("detect_mice", { showHidden: showOtherDevices }), invoke<number | null>("get_x1_battery").catch(() => null)]); setMice(detectedMice); setBatteryLevel(battery); } catch (e) { setMice([]); setBatteryLevel(null); setError(e instanceof Error ? e.message : String(e)); } finally { setLoading(false); } }, [showOtherDevices]);
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => () => { if (dpiTimer.current) clearTimeout(dpiTimer.current); }, []);
   const applyDpi = (value: number) => { if (value === dpi) return; setDpi(value); setProfiles(items => items.map(item => item.id === activeProfile?.id ? { ...item, dpi: value } : item)); setError(null); if (dpiTimer.current) clearTimeout(dpiTimer.current); dpiTimer.current = setTimeout(async () => { try { await invoke("set_dpi", { dpi: value }); notify("DPI changed", `Your mouse is now set to ${value} DPI.`, true); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }, 420); };
@@ -392,6 +393,7 @@ export default function App() {
   const mouse = mice.find(m => m.connected) ?? mice[0];
   const isG305 = mouse?.name.includes("G305") ?? false;
   const isModelO = mouse?.name.includes("Model O Wired") ?? false;
+  const isX1 = mouse?.name.includes("Attack Shark X1") ?? false;
   const deviceButtons = isG305 || isModelO ? [...buttonNames, "Button 6"] : buttonNames;
   const deviceImage = isG305 ? "/assets/logitech/g305-top.png" : isModelO ? "/assets/glorious/model-o-wired-top.png" : "/assets/x1/attack-shark-x1-top.png";
   const sideButtonView = !isG305 && !isModelO && (selectedButton === "Button 4" || selectedButton === "Button 5");
@@ -430,7 +432,7 @@ export default function App() {
       <aside className="sidebar glass-surface">
         <div className="brand"><div className="brand-mark"><Mouse size={19} /></div><div><div className="brand-name">Unnamed</div><div className="brand-subtitle">Mouse Control</div></div></div>
         <nav className="nav-list sidebar-groups">{sidebarGroups.map(group => <div className="sidebar-group" key={group.label}><div className="sidebar-section-label">{group.label}</div>{group.ids.map(id => { const item = tabs.find(candidate => candidate.id === id)!; const Icon = item.icon; return <button className={`nav-item ${tab === id ? "active" : ""}`} key={id} onClick={() => changeTab(id)} type="button"><Icon size={18}/><span>{item.label}</span></button>; })}</div>)}</nav>
-        <section className="current-area" aria-label="Current device setup"><div className="sidebar-section-label">Current</div><section className="current-setup glass-control"><span>Current setup</span><strong>{activeProfile?.name || "Default"}</strong><div><b>{dpi} DPI</b><b>{polling}</b></div><small>{connectionLabel}</small><button onClick={() => changeTab("dashboard")} type="button">Open dashboard →</button><img className="current-device-image" key={deviceImage} src={deviceImage} alt="" aria-hidden="true"/><div className="sidebar-device-card glass-surface"><span className={`device-dot ${connected ? "online" : ""}`}/><div className="device-card-copy"><strong>{mouse?.name || "No mouse detected"}</strong><span>{connectionLabel}</span></div><button className="icon-button" onClick={() => void refresh()} type="button"><RefreshCw size={15} className={loading ? "spin" : ""}/></button></div></section></section><button className={`nav-item settings-nav ${tab === "settings" ? "active" : ""}`} onClick={() => changeTab("settings")} type="button"><Settings size={18}/><span>Settings</span></button>
+        <section className="current-area" aria-label="Current device setup"><div className="sidebar-section-label">Current</div><section className="current-setup glass-control"><span>Current setup</span><strong>{activeProfile?.name || "Default"}</strong><div><b>{dpi} DPI</b><b>{polling}</b></div><small>{connectionLabel}</small><button onClick={() => changeTab("dashboard")} type="button">Open dashboard →</button><img className="current-device-image" key={deviceImage} src={deviceImage} alt="" aria-hidden="true"/><div className="sidebar-device-card glass-surface"><span className={`device-dot ${connected ? "online" : ""}`}/><div className="device-card-copy"><strong>{mouse?.name || "No mouse detected"}</strong><span>{connectionLabel}</span>{isX1 && batteryLevel !== null && <small className="battery-readout">Battery {batteryLevel}%</small>}</div><button className="icon-button" onClick={() => void refresh()} type="button"><RefreshCw size={15} className={loading ? "spin" : ""}/></button></div></section></section><button className={`nav-item settings-nav ${tab === "settings" ? "active" : ""}`} onClick={() => changeTab("settings")} type="button"><Settings size={18}/><span>Settings</span></button>
         <div className="sidebar-footer">Unnamed Desktop App <span>•</span> v0.1.0</div>
       </aside>
       <main className="content">

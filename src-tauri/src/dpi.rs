@@ -83,6 +83,38 @@ pub fn inspect_dpi_hardware() -> Result<Vec<HidDiagnostic>, String> {
     Ok(diagnostics)
 }
 
+pub fn read_x1_battery() -> Result<Option<u8>, String> {
+    let api = HidApi::new().map_err(|error| format!("Could not initialize HID: {error}"))?;
+    let path = api
+        .device_list()
+        .find(|device| {
+            device.vendor_id() == X1_VENDOR_ID
+                && (device.product_id() == X1_PRODUCT_ID
+                    || device.product_id() == WIRED_X1_PRODUCT_ID)
+                && device.interface_number() == CONFIG_INTERFACE
+                && device.usage_page() == 0xffff
+                && device.usage() == 0x0002
+        })
+        .map(|device| device.path().to_owned());
+
+    let Some(path) = path else {
+        return Ok(None);
+    };
+
+    let device = api
+        .open_path(&path)
+        .map_err(|error| format!("Could not open the X1 status interface: {error}"))?;
+    let mut feature = [0_u8; HID_FEATURE_DATA_LEN + 1];
+    let length = device
+        .get_feature_report(&mut feature)
+        .map_err(|error| format!("Could not read the X1 status report: {error}"))?;
+
+    // On the X1's unnumbered status report, the observed fourth byte is the
+    // battery percentage (for example, 0x5a reports 90%). Only surface values
+    // that fit a normal percentage; any unknown report layout stays hidden.
+    Ok((length > 3).then_some(feature[3]).filter(|value| (1..=100).contains(value)))
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }

@@ -64,6 +64,18 @@ fn inspect_dpi_hardware() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+fn get_x1_battery() -> Result<Option<u8>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        dpi::read_x1_battery()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
 fn set_dpi(dpi: u16) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     { dpi::set_dpi(dpi) }
@@ -462,7 +474,7 @@ fn main() {
     tauri::Builder::default()
         .manage(TrayState { minimize_to_tray: AtomicBool::new(true) })
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, set_dpi, set_minimize_to_tray, test_button_action, apply_button_mappings, is_process_running, ask_local_assistant, download_latest_app])
+        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, get_x1_battery, set_dpi, set_minimize_to_tray, test_button_action, apply_button_mappings, is_process_running, ask_local_assistant, download_latest_app])
         .on_page_load(|window, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                 let script = r#"(() => {
