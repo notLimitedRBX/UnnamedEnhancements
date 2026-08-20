@@ -165,6 +165,8 @@ export default function App() {
   const [bgBlur, setBgBlur] = useState(() => Number(localStorage.getItem("unnamed-bg-blur") || 0));
   const [bgSaturation, setBgSaturation] = useState(() => Number(localStorage.getItem("unnamed-bg-saturation") || 100));
   const [uiScale, setUiScale] = useState(() => Number(localStorage.getItem("unnamed-ui-scale") || 100));
+  const [bootProgress, setBootProgress] = useState(0);
+  const [showBoot, setShowBoot] = useState(true);
 
   const [glassMode, setGlassMode] = useState<GlassMode>(() => (localStorage.getItem("unnamed-glass-mode") as GlassMode) || "regular");
   const [glassOpacity, setGlassOpacity] = useState(() => Number(localStorage.getItem("unnamed-glass-opacity") || 64));
@@ -172,6 +174,20 @@ export default function App() {
   const [glassTint, setGlassTint] = useState(() => localStorage.getItem("unnamed-glass-tint") || "#15171B");
   const [glassBorder, setGlassBorder] = useState(() => Number(localStorage.getItem("unnamed-glass-border") || 42));
   const [glassRadius, setGlassRadius] = useState(() => Number(localStorage.getItem("unnamed-glass-radius") || 16));
+
+  useEffect(() => {
+    const started = Date.now();
+    let hideTimer: number | undefined;
+    const timer = window.setInterval(() => {
+      const progress = Math.min(100, Math.round(((Date.now() - started) / 8000) * 100));
+      setBootProgress(progress);
+      if (progress === 100) {
+        window.clearInterval(timer);
+        hideTimer = window.setTimeout(() => setShowBoot(false), 260);
+      }
+    }, 80);
+    return () => { window.clearInterval(timer); if (hideTimer) window.clearTimeout(hideTimer); };
+  }, []);
 
   useEffect(() => { localStorage.setItem("unnamed-bg-mode", bgMode); localStorage.setItem("unnamed-bg-color", bgColor); localStorage.setItem("unnamed-bg-gradient-from", gradA); localStorage.setItem("unnamed-bg-gradient-to", gradB); localStorage.setItem("unnamed-bg-fit", fit); localStorage.setItem("unnamed-bg-focus", bgFocus); localStorage.setItem("unnamed-bg-opacity", String(bgOpacity)); localStorage.setItem("unnamed-bg-blur", String(bgBlur)); localStorage.setItem("unnamed-bg-saturation", String(bgSaturation)); localStorage.setItem("unnamed-ui-scale", String(uiScale)); localStorage.setItem("unnamed-glass-mode", glassMode); localStorage.setItem("unnamed-glass-opacity", String(glassOpacity)); localStorage.setItem("unnamed-glass-blur", String(glassBlur)); localStorage.setItem("unnamed-glass-tint", glassTint); localStorage.setItem("unnamed-glass-border", String(glassBorder)); localStorage.setItem("unnamed-glass-radius", String(glassRadius)); localStorage.setItem("unnamed-text-scale", String(textScale)); }, [bgMode,bgColor,gradA,gradB,fit,bgFocus,bgOpacity,bgBlur,bgSaturation,uiScale,textScale,glassMode,glassOpacity,glassBlur,glassTint,glassBorder,glassRadius]);
   useEffect(() => { let active = true; void readBackground().then(image => { if (active) setBgImage(image); }).catch(() => undefined).finally(() => { if (active) setBackgroundReady(true); }); return () => { active = false; }; }, []);
@@ -246,6 +262,15 @@ export default function App() {
   };
 
   return <div className={`app-shell glass-${glassMode}`} style={glassStyle}>
+    {showBoot && <div className={`app-boot-screen ${bootProgress === 100 ? "done" : ""}`} aria-label="Opening Unnamed Enhancements">
+      <section className="app-boot-panel">
+        <span className="app-boot-kicker">Preparing your app</span>
+        <h1>Unnamed Enhancements</h1>
+        <p>{bootProgress < 20 ? "Getting things ready..." : bootProgress < 78 ? "Setting up your workspace..." : "Almost there..."}</p>
+        <strong>{bootProgress}%</strong>
+        <div className="app-boot-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={bootProgress}><i style={{ width: `${bootProgress}%` }} /></div>
+      </section>
+    </div>}
     <div className="background-layer" style={{ ...background, opacity: bgMode === "default" ? 1 : bgOpacity / 100, filter: `${bgBlur ? `blur(${bgBlur}px) ` : ""}saturate(${bgSaturation}%)` }} />
     <div className="background-shade" />
     <div className="ui-scale-layer" style={{ "--ui-scale": uiScale / 100 } as React.CSSProperties}>
