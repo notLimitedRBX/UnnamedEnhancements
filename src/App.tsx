@@ -153,13 +153,11 @@ export default function App() {
   const [textScale, setTextScale] = useState(() => Number(localStorage.getItem("unnamed-text-scale") || 100));
   const dpiTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastAppliedProfile = useRef<string | null>(null);
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notificationQueue, setNotificationQueue] = useState<AppNotification[]>([]);
+  const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
+  const [notificationLeaving, setNotificationLeaving] = useState(false);
   const activeProfile = profiles.find(candidate => candidate.id === profile) ?? profiles[0];
-  const notify = (title: string, detail: string) => {
-    const id = crypto.randomUUID();
-    setNotifications(items => [...items, { id, title, detail }].slice(-3));
-    window.setTimeout(() => setNotifications(items => items.filter(item => item.id !== id)), 4200);
-  };
+  const notify = (title: string, detail: string) => setNotificationQueue(items => [...items, { id: crypto.randomUUID(), title, detail }].slice(-5));
   const buttons = activeProfile?.buttons ?? defaultButtons;
 
   const [bgMode, setBgMode] = useState<BackgroundMode>(() => (localStorage.getItem("unnamed-bg-mode") as BackgroundMode) || "default");
@@ -203,6 +201,19 @@ export default function App() {
   const [glassTint, setGlassTint] = useState(() => localStorage.getItem("unnamed-glass-tint") || "#15171B");
   const [glassBorder, setGlassBorder] = useState(() => Number(localStorage.getItem("unnamed-glass-border") || 42));
   const [glassRadius, setGlassRadius] = useState(() => Number(localStorage.getItem("unnamed-glass-radius") || 16));
+
+  useEffect(() => {
+    if (activeNotification || !notificationQueue.length) return;
+    setActiveNotification(notificationQueue[0]);
+    setNotificationQueue(items => items.slice(1));
+    setNotificationLeaving(false);
+  }, [activeNotification, notificationQueue]);
+  useEffect(() => {
+    if (!activeNotification) return;
+    const fadeTimer = window.setTimeout(() => setNotificationLeaving(true), 3400);
+    const removeTimer = window.setTimeout(() => { setActiveNotification(null); setNotificationLeaving(false); }, 3850);
+    return () => { window.clearTimeout(fadeTimer); window.clearTimeout(removeTimer); };
+  }, [activeNotification]);
 
   useEffect(() => {
     const started = Date.now();
@@ -401,7 +412,7 @@ export default function App() {
         <div className="app-boot-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={bootProgress}><i style={{ width: `${bootProgress}%` }} /></div>
       </section>
     </div>}
-    <div className="notification-stack" aria-live="polite">{notifications.map(notification => <article className="app-notification glass-control" key={notification.id}><span>{notification.title}</span><strong>{notification.detail}</strong></article>)}</div>
+    <div className="notification-stack" aria-live="polite">{activeNotification && <article className={`app-notification glass-control ${notificationLeaving ? "leaving" : ""}`} key={activeNotification.id}><span>{activeNotification.title}</span><strong>{activeNotification.detail}</strong></article>}</div>
     {aimPromptVisible && <aside className="dpi-aim-prompt glass-control"><button className="dpi-aim-close" onClick={() => setAimPromptVisible(false)} type="button" aria-label="Dismiss">×</button><span>New DPI applied</span><strong>Practice your aim with {dpi} DPI?</strong><div><button className="primary-button" onClick={() => { setAimPromptVisible(false); setTrainerSeconds(30); setTrainerVisible(true); }} type="button">Quick trial</button><button className="secondary-button" onClick={() => setAimPromptVisible(false)} type="button">Not now</button></div></aside>}
     <div className="background-layer" style={{ ...background, opacity: bgMode === "default" ? 1 : bgOpacity / 100, filter: `${bgBlur ? `blur(${bgBlur}px) ` : ""}saturate(${bgSaturation}%)` }} />
     <div className="background-shade" />
