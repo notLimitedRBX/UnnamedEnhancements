@@ -68,7 +68,7 @@ jobs:
       - name: Build portable app
         run: npm run tauri build
 
-      - name: Prepare portable app artifact
+      - name: Stage portable app
         shell: pwsh
         run: |
           $app = Get-ChildItem "src-tauri/target/release" -Filter "*.exe" | Select-Object -First 1
@@ -76,9 +76,20 @@ jobs:
           New-Item -ItemType Directory -Force -Path "release" | Out-Null
           Copy-Item -LiteralPath $app.FullName -Destination "release/UnnamedEnhancements.exe"
 
-      - name: Upload portable app
+      - name: Build custom downloader
+        run: npm run downloader:build
+
+      - name: Add downloader to Preview bundle
+        shell: pwsh
+        run: |
+          $downloader = Get-ChildItem "src-tauri/target/release" -Filter "*.exe" | Select-Object -First 1
+          if (-not $downloader) { throw "Custom downloader executable was not created." }
+          Copy-Item -LiteralPath $downloader.FullName -Destination "release/UnnamedEnhancements-Downloader.exe"
+          Get-ChildItem "release"
+
+      - name: Upload Preview bundle
         uses: actions/upload-artifact@v4
         with:
           name: UnnamedEnhancements-Preview-Windows
-          path: release/UnnamedEnhancements.exe
+          path: release
           compression-level: 9

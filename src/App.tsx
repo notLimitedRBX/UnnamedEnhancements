@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Bot, Gauge, Gamepad2, Keyboard, Mouse, Palette, Play, Plus, RefreshCw, Settings, SlidersHorizontal, BookOpen, Trash2, Upload, Zap } from "lucide-react";
+import { Bot, Gauge, Gamepad2, Keyboard, Mouse, Palette, Play, Plus, RefreshCw, SendHorizontal, Settings, SlidersHorizontal, BookOpen, Trash2, Upload, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type MouseDevice = { id: string; name: string; manufacturer: string | null; vid: string | null; pid: string | null; connection: string; connected: boolean };
@@ -7,6 +7,7 @@ type Tab = "overview" | "buttons" | "performance" | "profiles" | "help" | "assis
 type BackgroundMode = "default" | "solid" | "gradient" | "image";
 type ImageFit = "cover" | "contain" | "stretch";
 type GlassMode = "regular" | "clear";
+type LocalMessage = { id: string; role: "user" | "assistant"; content: string };
 
 const tabs: { id: Tab; label: string; icon: typeof Mouse }[] = [
   { id: "overview", label: "Overview", icon: Mouse }, { id: "buttons", label: "Buttons", icon: SlidersHorizontal },
@@ -141,8 +142,7 @@ export default function App() {
   const [showOtherDevices, setShowOtherDevices] = useState(false);
   const [loading, setLoading] = useState(true);
   const [localQuestion, setLocalQuestion] = useState("");
-  const [lastLocalQuestion, setLastLocalQuestion] = useState("");
-  const [localReply, setLocalReply] = useState("");
+  const [localMessages, setLocalMessages] = useState<LocalMessage[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dpi, setDpi] = useState(800);
@@ -203,10 +203,15 @@ export default function App() {
   const askLocalAssistant = async () => {
     const question = localQuestion.trim();
     if (!question || localLoading) return;
-    setError(null); setLastLocalQuestion(question); setLocalReply(""); setLocalQuestion(""); setLocalLoading(true);
+    const userMessage: LocalMessage = { id: crypto.randomUUID(), role: "user", content: question };
+    setError(null);
+    setLocalMessages(messages => [...messages, userMessage]);
+    setLocalQuestion("");
+    setLocalLoading(true);
     try {
       const deviceContext = mouse ? `${mouse.name} · ${mouse.connection} · profile ${activeProfile?.name || "Default"} · ${dpi} DPI` : "No device detected";
-      setLocalReply(await invoke<string>("ask_local_assistant", { message: question, deviceContext }));
+      const reply = await invoke<string>("ask_local_assistant", { message: question, deviceContext });
+      setLocalMessages(messages => [...messages, { id: crypto.randomUUID(), role: "assistant", content: reply }]);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLocalLoading(false); }
   };
@@ -259,7 +264,22 @@ export default function App() {
         {tab === "performance" && <section className="panel page-panel glass-surface"><div className="section-heading compact"><div><h2>Performance</h2><p>Fine-tune sensitivity and responsiveness.</p></div></div><div className="performance-layout"><div className="performance-value"><span>Current DPI</span><DpiInput value={dpi} onApply={applyDpi} minimum={dpiMinimum} maximum={dpiMaximum}/><small>{isG305 ? "G305 range · 200–12,000 DPI." : isModelO ? "Model O range · 50–12,000 DPI." : "Hardware DPI control · 50–40,000 DPI."}</small></div><div className="performance-slider"><input className="big-range" type="range" min={dpiMinimum} max={dpiMaximum} step="50" value={dpi} onChange={e => applyDpi(Number(e.target.value))}/><div className="dpi-preset-row full">{dpiPresets.map(value => <button className={dpi === value ? "selected" : ""} key={value} onClick={() => applyDpi(value)} type="button">{value >= 1000 ? `${value / 1000}K` : value}</button>)}</div></div></div><div className="polling-options"><span>Polling rate</span>{["125 Hz","500 Hz","1000 Hz"].map(r => <button className={polling === r ? "selected" : ""} key={r} onClick={() => setPollingForProfile(r)} type="button">{r}</button>)}</div><div className="dpi-diagnostics"><button className="secondary-button glass-control" onClick={() => void inspectDpiHardware()} type="button">Collect DPI diagnostics</button><p>Read-only: this records the mouse’s HID interfaces and descriptor without changing its settings.</p>{dpiDiagnostics && <pre>{dpiDiagnostics}</pre>}</div></section>}
         {tab === "profiles" && <section className="panel page-panel glass-surface"><div className="section-heading compact"><div><h2>Profiles</h2><p>Create and switch saved DPI, polling, and button layouts.</p></div></div><div className="profile-create glass-control"><input value={newProfileName} placeholder="New profile name" onChange={e => setNewProfileName(e.target.value)} onKeyDown={e => e.key === "Enter" && createProfile()}/><button className="secondary-button" onClick={createProfile} type="button"><Plus size={15}/> Create profile</button></div><div className="profile-grid">{profiles.map(item => <div className={`profile-card glass-control ${activeProfile?.id === item.id ? "selected" : ""}`} key={item.id}><Gamepad2 size={19}/><strong>{item.name}</strong><span>{item.dpi} DPI · {item.polling}</span><div className="profile-card-actions"><button onClick={() => setProfile(item.id)} type="button">{activeProfile?.id === item.id ? "Active" : "Use"}</button><button onClick={() => renameProfile(item)} type="button">Rename</button><button className="danger-button" onClick={() => deleteProfile(item)} type="button" title="Delete profile"><Trash2 size={14}/></button></div></div>)}</div></section>}
         {tab === "help" && <section className="panel page-panel glass-surface help-panel"><div className="section-heading compact"><div><h2>User Manual</h2><p>Quick answers for getting the most out of Unnamed.</p></div></div><div className="help-grid"><article className="help-card glass-control"><h3>Connect your mouse</h3><p>Plug in USB-C or the 2.4 GHz receiver, then use <b>Scan for devices</b> on Overview. The card confirms the detected name and connection.</p></article><article className="help-card glass-control"><h3>Change DPI</h3><p>Use Performance or Quick settings. Type a number directly or use the slider. The X1 can apply supported hardware DPI; other detected mice keep their values as profile settings until their exact protocol is verified.</p></article><article className="help-card glass-control"><h3>Remap buttons</h3><p>Open Buttons, click the physical mouse button, choose an action, then set a custom keybind or a preset such as Explorer, Task Manager, Settings, or Email.</p></article><article className="help-card glass-control"><h3>Profiles</h3><p>Create profiles for work, gaming, or different games. Each profile remembers its DPI, polling selection, and button layout on this PC.</p></article><article className="help-card glass-control"><h3>Appearance</h3><p>Settings lets you use a photo or animated GIF background, adjust blur and glass transparency, and scale the interface. These changes save automatically.</p></article><article className="help-card glass-control"><h3>Need a clean reset?</h3><p>Use <b>Reset appearance</b> in Settings for the visual theme. If a mouse is not found, unplug and reconnect it, then scan again.</p></article></div><div className="help-note">Tip: do not use third-party mouse software at the same time as Unnamed when testing button mappings; it can override the active mapping.</div></section>}
-        {tab === "assistant" && <section className="panel page-panel glass-surface local-ai-panel"><div className="section-heading compact"><div><h2>Local AI</h2><p>Private help for Unnamed and everyday PC questions.</p></div><span className="local-ai-badge"><Bot size={14}/> Runs on this PC</span></div><div className="local-ai-card glass-control"><div className="local-ai-chat">{!lastLocalQuestion && !localLoading && !localReply && <div className="local-ai-welcome"><Bot size={21}/><div><strong>Hey — what can I help with?</strong><span>I know your active mouse, profile, and DPI while we chat.</span></div></div>}{lastLocalQuestion && <article className="local-ai-user-message"><span>You</span><p>{lastLocalQuestion}</p></article>}{localLoading && <article className="local-ai-thinking"><Bot size={15}/><span>Thinking<span className="thinking-dots">…</span></span></article>}{localReply && <article className="local-ai-reply"><span>Local AI</span><p>{localReply}</p></article>}</div><div className="local-ai-suggestions"><span>Try asking</span>{["How do I change my DPI?","Help me make a gaming profile","Why is my mouse not detected?"].map(prompt => <button key={prompt} onClick={() => setLocalQuestion(prompt)} type="button">{prompt}</button>)}</div><label className="local-ai-composer"><textarea value={localQuestion} placeholder="Ask anything about your mouse or Windows…" onChange={event => setLocalQuestion(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askLocalAssistant(); } }}/><div className="local-ai-actions"><span>Enter to send · Shift + Enter for a new line</span><button className="primary-button glass-control" disabled={localLoading || !localQuestion.trim()} onClick={() => void askLocalAssistant()} type="button"><Bot size={16}/>{localLoading ? "Thinking…" : "Send"}</button></div></label><details className="local-ai-setup"><summary>First time using Local AI?</summary><div><p>Install Ollama, then run this once in PowerShell:</p><code>ollama pull qwen2.5:3b-instruct</code><small>After that, it runs locally with no account or API key.</small></div></details></div></section>}
+        {tab === "assistant" && <section className="panel page-panel glass-surface local-ai-panel">
+          <div className="section-heading compact"><div><h2>Local AI</h2><p>Private help for Unnamed and everyday PC questions.</p></div><span className="local-ai-badge"><Bot size={14}/> Runs on this PC</span></div>
+          <div className="local-ai-card glass-control">
+            <div className="local-ai-chat" aria-live="polite" role="log">
+              {!localMessages.length && !localLoading && <div className="local-ai-intro"><span className="local-ai-avatar"><Bot size={16}/></span><div><strong>Unnamed Local AI</strong><p>Ask about your mouse, profiles, DPI, or Windows. It stays on this PC.</p></div></div>}
+              {localMessages.map(message => <article className={`local-ai-message ${message.role}`} key={message.id}>
+                <span className="local-ai-avatar">{message.role === "assistant" ? <Bot size={16}/> : "Y"}</span>
+                <div><header><strong>{message.role === "assistant" ? "Unnamed Local AI" : "You"}</strong><span>{message.role === "assistant" ? "Local" : "Just now"}</span></header><p>{message.content}</p></div>
+              </article>)}
+              {localLoading && <article className="local-ai-message assistant local-ai-thinking"><span className="local-ai-avatar"><Bot size={16}/></span><div><header><strong>Unnamed Local AI</strong><span>Local</span></header><p><i></i><i></i><i></i></p></div></article>}
+            </div>
+            {!localMessages.length && <div className="local-ai-suggestions"><span>Try asking</span>{["How do I change my DPI?","Help me make a gaming profile","Why is my mouse not detected?"].map(prompt => <button key={prompt} onClick={() => setLocalQuestion(prompt)} type="button">{prompt}</button>)}</div>}
+            <label className="local-ai-composer"><textarea value={localQuestion} placeholder="Message Local AI" onChange={event => setLocalQuestion(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askLocalAssistant(); } }}/><div className="local-ai-actions"><span>Enter to send · Shift + Enter for a new line</span><button className="local-ai-send" aria-label="Send message" disabled={localLoading || !localQuestion.trim()} onClick={() => void askLocalAssistant()} type="button"><SendHorizontal size={17}/></button></div></label>
+            <details className="local-ai-setup"><summary>Local AI setup</summary><div><p>Install Ollama, then run this once in PowerShell:</p><code>ollama pull qwen2.5:3b-instruct</code><small>After that, it runs locally with no account or API key.</small></div></details>
+          </div>
+        </section>}
         {tab === "settings" && <section className="panel page-panel background-settings glass-surface"><div className="section-heading compact"><div><h2>Appearance</h2><p>Make the background and interface as transparent as you want.</p></div></div>
           <div className="appearance-section"><h3>Background</h3><div className="background-mode-grid">{([["default","Default"],["solid","Solid colour"],["gradient","Gradient"],["image","Image"]] as [BackgroundMode,string][]).map(([mode,label]) => <button className={`background-mode glass-control ${bgMode === mode ? "selected" : ""}`} key={mode} onClick={() => setBgMode(mode)} type="button"><Palette size={17}/><span>{label}</span></button>)}</div>
           {bgMode === "solid" && <div className="background-control"><HexColor label="Colour" value={bgColor} onChange={setBgColor}/></div>}

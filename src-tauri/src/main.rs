@@ -311,8 +311,38 @@ fn finish_download_and_launch(
     Ok(())
 }
 
+fn bundled_preview_app() -> Option<PathBuf> {
+    let current_executable = std::env::current_exe().ok()?;
+    let candidate = current_executable.parent()?.join("UnnamedEnhancements.exe");
+    candidate.is_file().then_some(candidate)
+}
+
+fn launch_bundled_preview(app: &tauri::AppHandle, destination: &PathBuf) -> Result<(), String> {
+    const DISPLAY_TIME: Duration = Duration::from_secs(8);
+    let started_at = Instant::now();
+    while started_at.elapsed() < DISPLAY_TIME {
+        let elapsed = started_at.elapsed().as_millis().min(8_000) as u64;
+        let percent = ((elapsed * 99) / 8_000) as u8;
+        let status = if percent < 18 { "Preparing your app..." } else if percent < 72 { "Setting up Unnamed Enhancements..." } else { "Almost ready..." };
+        emit_download_progress(app, percent, status);
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    emit_download_progress(app, 100, "Launching Unnamed Enhancements...");
+    Command::new(destination)
+        .spawn()
+        .map_err(|error| format!("The app is ready but could not be launched: {error}"))?;
+    Ok(())
+}
+
 #[tauri::command]
 fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
+    // Preview builds ship the app beside the custom downloader. This makes the
+    // first-run experience reliable and avoids a Windows installer or a release
+    // download that may not exist yet.
+    if let Some(destination) = bundled_preview_app() {
+        return launch_bundled_preview(&app, &destination);
+    }
+
     let started_at = Instant::now();
     emit_download_progress(&app, 0, "Checking for the latest version...");
 
@@ -333,7 +363,7 @@ fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
     let asset = assets
         .into_iter()
         .find(|asset| asset.name == "UnnamedEnhancements.exe")
-        .ok_or_else(|| "The latest release does not contain UnnamedEnhancements.exe.".to_string())?;
+        .ok_or_else(|| "This downloader needs the Preview bundle, or a published release containing UnnamedEnhancements.exe.".to_string())?;
 
     let app_data = std::env::var_os("LOCALAPPDATA")
         .ok_or_else(|| "Windows Local AppData could not be found.".to_string())?;
@@ -369,12 +399,9 @@ fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
     let mut buffer = [0_u8; 256 * 1024];
 
     loop {
-        let read = response
-            .read(&mut buffer)
-            .map_err(|error| format!("Could not download the app: {error}"))?;
+        let read = response.read(&mut buffer).map_err(|error| format!("Could not download the app: {error}"))?;
         if read == 0 { break; }
-        file.write_all(&buffer[..read])
-            .map_err(|error| format!("Could not save the app download: {error}"))?;
+        file.write_all(&buffer[..read]).map_err(|error| format!("Could not save the app download: {error}"))?;
         downloaded_bytes += read as u64;
         let percent = ((downloaded_bytes.saturating_mul(100) / total_bytes).min(100)) as u8;
         if percent > last_percent {
@@ -386,13 +413,10 @@ fn download_latest_app(app: tauri::AppHandle) -> Result<(), String> {
     drop(file);
 
     if destination.exists() {
-        fs::remove_file(&destination)
-            .map_err(|error| format!("Close Unnamed Enhancements before updating it: {error}"))?;
+        fs::remove_file(&destination).map_err(|error| format!("Close Unnamed Enhancements before updating it: {error}"))?;
     }
-    fs::rename(&temporary_destination, &destination)
-        .map_err(|error| format!("Could not finish the app download: {error}"))?;
+    fs::rename(&temporary_destination, &destination).map_err(|error| format!("Could not finish the app download: {error}"))?;
     let _ = fs::write(&version_marker, &release_tag);
-
     finish_download_and_launch(&app, &destination, started_at)
 }
 
