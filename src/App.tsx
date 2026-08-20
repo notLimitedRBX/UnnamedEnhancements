@@ -8,11 +8,12 @@ type BackgroundMode = "default" | "solid" | "gradient" | "image";
 type ImageFit = "cover" | "contain" | "stretch";
 type GlassMode = "regular" | "clear";
 type LocalMessage = { id: string; role: "user" | "assistant"; content: string };
+type AppNotification = { id: string; title: string; detail: string };
 type TrainerMode = "Flick" | "Tracking" | "Reaction";
 
 const tabs: { id: Tab; label: string; icon: typeof Mouse }[] = [
   { id: "overview", label: "Overview", icon: Mouse }, { id: "buttons", label: "Buttons", icon: SlidersHorizontal },
-  { id: "performance", label: "Performance", icon: Gauge }, { id: "profiles", label: "Profiles", icon: Gamepad2 }, { id: "assistant", label: "Local AI", icon: Bot }, { id: "settings", label: "Settings", icon: Settings },
+  { id: "performance", label: "Performance", icon: Gauge }, { id: "profiles", label: "Profiles", icon: Gamepad2 }, { id: "assistant", label: "Serx", icon: Bot }, { id: "settings", label: "Settings", icon: Settings },
 ];
 type ButtonAction = "Default" | "Keybind" | "Open File Explorer" | "Open Task Manager" | "Open Windows Settings" | "Open Email" | "Back" | "Forward" | "DPI Up" | "DPI Down" | "Custom program" | "Disabled";
 type ButtonBinding = { action: ButtonAction; target?: string };
@@ -151,7 +152,14 @@ export default function App() {
   const [polling, setPolling] = useState("1000 Hz");
   const [textScale, setTextScale] = useState(() => Number(localStorage.getItem("unnamed-text-scale") || 100));
   const dpiTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAppliedProfile = useRef<string | null>(null);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const activeProfile = profiles.find(candidate => candidate.id === profile) ?? profiles[0];
+  const notify = (title: string, detail: string) => {
+    const id = crypto.randomUUID();
+    setNotifications(items => [...items, { id, title, detail }].slice(-3));
+    window.setTimeout(() => setNotifications(items => items.filter(item => item.id !== id)), 4200);
+  };
   const buttons = activeProfile?.buttons ?? defaultButtons;
 
   const [bgMode, setBgMode] = useState<BackgroundMode>(() => (localStorage.getItem("unnamed-bg-mode") as BackgroundMode) || "default");
@@ -261,6 +269,9 @@ export default function App() {
   }, [profiles, profile, activeProfile]);
   useEffect(() => {
     if (!activeProfile) return;
+    const hasChangedProfile = lastAppliedProfile.current !== null && lastAppliedProfile.current !== activeProfile.id;
+    lastAppliedProfile.current = activeProfile.id;
+    if (hasChangedProfile) notify("Profile applied", `${activeProfile.name} has been applied.`);
     setDpi(activeProfile.dpi);
     setPolling(activeProfile.polling);
     void invoke("set_dpi", { dpi: activeProfile.dpi }).catch(reason => {
@@ -274,7 +285,7 @@ export default function App() {
   const refresh = useCallback(async () => { setLoading(true); setError(null); try { setMice(await invoke<MouseDevice[]>("detect_mice", { showHidden: showOtherDevices })); } catch (e) { setMice([]); setError(e instanceof Error ? e.message : String(e)); } finally { setLoading(false); } }, [showOtherDevices]);
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => () => { if (dpiTimer.current) clearTimeout(dpiTimer.current); }, []);
-  const applyDpi = (value: number) => { setDpi(value); setProfiles(items => items.map(item => item.id === activeProfile?.id ? { ...item, dpi: value } : item)); setError(null); setAimPromptVisible(true); if (dpiTimer.current) clearTimeout(dpiTimer.current); dpiTimer.current = setTimeout(async () => { try { await invoke("set_dpi", { dpi: value }); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }, 300); };
+  const applyDpi = (value: number) => { if (value === dpi) return; setDpi(value); setProfiles(items => items.map(item => item.id === activeProfile?.id ? { ...item, dpi: value } : item)); setError(null); if (dpiTimer.current) clearTimeout(dpiTimer.current); dpiTimer.current = setTimeout(async () => { try { await invoke("set_dpi", { dpi: value }); setAimPromptVisible(true); notify("DPI changed", `Your mouse is now set to ${value} DPI.`); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }, 420); };
   const setPollingForProfile = (value: string) => { setPolling(value); setProfiles(items => items.map(item => item.id === activeProfile?.id ? { ...item, polling: value } : item)); };
   const updateButton = (button: string, patch: Partial<ButtonBinding>) => setProfiles(items => items.map(item => item.id === activeProfile?.id ? { ...item, buttons: { ...item.buttons, [button]: { ...item.buttons[button], ...patch } } } : item));
   const askLocalAssistant = async () => {
@@ -289,6 +300,7 @@ export default function App() {
       const deviceContext = mouse ? `${mouse.name} · ${mouse.connection} · profile ${activeProfile?.name || "Default"} · ${dpi} DPI` : "No device detected";
       const reply = await invoke<string>("ask_local_assistant", { message: question, deviceContext });
       setLocalMessages(messages => [...messages, { id: crypto.randomUUID(), role: "assistant", content: reply }]);
+      notify("New message from Serx", "Your local assistant has replied.");
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLocalLoading(false); }
   };
@@ -389,6 +401,7 @@ export default function App() {
         <div className="app-boot-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={bootProgress}><i style={{ width: `${bootProgress}%` }} /></div>
       </section>
     </div>}
+    <div className="notification-stack" aria-live="polite">{notifications.map(notification => <article className="app-notification glass-control" key={notification.id}><span>{notification.title}</span><strong>{notification.detail}</strong></article>)}</div>
     {aimPromptVisible && <aside className="dpi-aim-prompt glass-control"><button className="dpi-aim-close" onClick={() => setAimPromptVisible(false)} type="button" aria-label="Dismiss">×</button><span>New DPI applied</span><strong>Practice your aim with {dpi} DPI?</strong><div><button className="primary-button" onClick={() => { setAimPromptVisible(false); setTrainerSeconds(30); setTrainerVisible(true); }} type="button">Quick trial</button><button className="secondary-button" onClick={() => setAimPromptVisible(false)} type="button">Not now</button></div></aside>}
     <div className="background-layer" style={{ ...background, opacity: bgMode === "default" ? 1 : bgOpacity / 100, filter: `${bgBlur ? `blur(${bgBlur}px) ` : ""}saturate(${bgSaturation}%)` }} />
     <div className="background-shade" />
@@ -419,18 +432,18 @@ export default function App() {
         </div></section>}
         {tab === "help" && <section className="panel page-panel glass-surface help-panel"><div className="section-heading compact"><div><h2>User Manual</h2><p>Quick answers for getting the most out of Unnamed.</p></div></div><div className="help-grid"><article className="help-card glass-control"><h3>Connect your mouse</h3><p>Plug in USB-C or the 2.4 GHz receiver, then use <b>Scan for devices</b> on Overview. The card confirms the detected name and connection.</p></article><article className="help-card glass-control"><h3>Change DPI</h3><p>Use Performance or Quick settings. Type a number directly or use the slider. The X1 can apply supported hardware DPI; other detected mice keep their values as profile settings until their exact protocol is verified.</p></article><article className="help-card glass-control"><h3>Remap buttons</h3><p>Open Buttons, click the physical mouse button, choose an action, then set a custom keybind or a preset such as Explorer, Task Manager, Settings, or Email.</p></article><article className="help-card glass-control"><h3>Profiles</h3><p>Create profiles for work, gaming, or different games. Each profile remembers its DPI, polling selection, and button layout on this PC.</p></article><article className="help-card glass-control"><h3>Appearance</h3><p>Settings lets you use a photo or animated GIF background, adjust blur and glass transparency, and scale the interface. These changes save automatically.</p></article><article className="help-card glass-control"><h3>Need a clean reset?</h3><p>Use <b>Reset appearance</b> in Settings for the visual theme. If a mouse is not found, unplug and reconnect it, then scan again.</p></article></div><div className="help-note">Tip: do not use third-party mouse software at the same time as Unnamed when testing button mappings; it can override the active mapping.</div></section>}
         {tab === "assistant" && <section className="panel page-panel glass-surface local-ai-panel">
-          <div className="section-heading compact"><div><h2>Local AI</h2><p>Private help for Unnamed and everyday PC questions.</p></div><span className="local-ai-badge"><Bot size={14}/> Runs on this PC</span></div>
+          <div className="section-heading compact"><div><h2>Serx</h2><p>Private help for Unnamed and everyday PC questions.</p></div><span className="local-ai-badge"><Bot size={14}/> Runs on this PC</span></div>
           <div className="local-ai-card glass-control">
             <div className="local-ai-chat" aria-live="polite" role="log">
-              {!localMessages.length && !localLoading && <div className="local-ai-intro"><span className="local-ai-avatar"><Bot size={16}/></span><div><strong>Unnamed Local AI</strong><p>Ask about your mouse, profiles, DPI, or Windows. It stays on this PC.</p></div></div>}
+              {!localMessages.length && !localLoading && <div className="local-ai-intro"><span className="local-ai-avatar"><Bot size={16}/></span><div><strong>Serx</strong><p>Ask about your mouse, profiles, DPI, or Windows. It stays on this PC.</p></div></div>}
               {localMessages.map(message => <article className={`local-ai-message ${message.role}`} key={message.id}>
                 <span className="local-ai-avatar">{message.role === "assistant" ? <Bot size={16}/> : "Y"}</span>
-                <div><header><strong>{message.role === "assistant" ? "Unnamed Local AI" : "You"}</strong><span>{message.role === "assistant" ? "Local" : "Just now"}</span></header><p>{message.content}</p></div>
+                <div><header><strong>{message.role === "assistant" ? "Serx" : "You"}</strong><span>{message.role === "assistant" ? "Local" : "Just now"}</span></header><p>{message.content}</p></div>
               </article>)}
               {localLoading && <article className="local-ai-message assistant local-ai-thinking"><span className="local-ai-avatar"><Bot size={16}/></span><div><header><strong>Unnamed Local AI</strong><span>Local</span></header><p><i></i><i></i><i></i></p></div></article>}
             </div>
-            <label className="local-ai-composer"><textarea value={localQuestion} placeholder="Message Local AI" onChange={event => setLocalQuestion(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askLocalAssistant(); } }}/><div className="local-ai-actions"><span>Enter to send · Shift + Enter for a new line</span><button className="local-ai-send" aria-label="Send message" disabled={localLoading || !localQuestion.trim()} onClick={() => void askLocalAssistant()} type="button"><SendHorizontal size={17}/></button></div></label>
-            <details className="local-ai-setup"><summary>Local AI setup</summary><div><p>Install Ollama, then run this once in PowerShell:</p><code>ollama pull qwen2.5:3b-instruct</code><small>After that, it runs locally with no account or API key.</small></div></details>
+            <label className="local-ai-composer"><textarea value={localQuestion} placeholder="Message Serx" onChange={event => setLocalQuestion(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askLocalAssistant(); } }}/><div className="local-ai-actions"><span>Enter to send · Shift + Enter for a new line</span><button className="local-ai-send" aria-label="Send message" disabled={localLoading || !localQuestion.trim()} onClick={() => void askLocalAssistant()} type="button"><SendHorizontal size={17}/></button></div></label>
+            <details className="local-ai-setup"><summary>Serx setup</summary><div><p>Install Ollama, then run this once in PowerShell:</p><code>ollama pull qwen2.5:3b-instruct</code><small>After that, it runs locally with no account or API key.</small></div></details>
           </div>
         </section>}
         {tab === "settings" && <section className="panel page-panel background-settings glass-surface"><div className="section-heading compact"><div><h2>Appearance</h2><p>Make the background and interface as transparent as you want.</p></div></div>
