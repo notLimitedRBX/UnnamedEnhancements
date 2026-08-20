@@ -80,6 +80,28 @@ fn set_minimize_to_tray(enabled: bool, state: tauri::State<'_, TrayState>) {
 }
 
 #[tauri::command]
+fn is_process_running(process_name: String) -> Result<bool, String> {
+    let name = process_name.trim();
+    if name.is_empty() { return Ok(false); }
+    if name.chars().any(|character| !(character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))) {
+        return Err("Use the executable name only, for example game.exe.".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let filter = format!("IMAGENAME eq {name}");
+        let output = Command::new("tasklist").args(["/FI", &filter, "/NH"]).output()
+            .map_err(|error| format!("Could not check running apps: {error}"))?;
+        let text = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
+        Ok(text.contains(&name.to_ascii_lowercase()))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = name;
+        Err("Auto-switching is currently available on Windows only.".to_string())
+    }
+}
+
+#[tauri::command]
 fn ask_local_assistant(message: String, device_context: Option<String>) -> Result<String, String> {
     let message = message.trim();
     if message.is_empty() { return Err("Write a question for Local AI first.".to_string()); }
@@ -427,7 +449,7 @@ fn main() {
     tauri::Builder::default()
         .manage(TrayState { minimize_to_tray: AtomicBool::new(true) })
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, set_dpi, set_minimize_to_tray, test_button_action, apply_button_mappings, ask_local_assistant, download_latest_app])
+        .invoke_handler(tauri::generate_handler![detect_mice, inspect_dpi_hardware, set_dpi, set_minimize_to_tray, test_button_action, apply_button_mappings, is_process_running, ask_local_assistant, download_latest_app])
         .on_page_load(|window, payload| {
             if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                 let script = r#"(() => {
