@@ -8,7 +8,7 @@ type BackgroundMode = "default" | "solid" | "gradient" | "image";
 type ImageFit = "cover" | "contain" | "stretch";
 type GlassMode = "regular" | "clear";
 type LocalMessage = { id: string; role: "user" | "assistant"; content: string };
-type AppNotification = { id: string; title: string; detail: string };
+type AppNotification = { id: string; title: string; detail: string; aimTrial?: boolean };
 type TrainerMode = "Flick" | "Tracking" | "Reaction";
 
 const tabs: { id: Tab; label: string; icon: typeof Mouse }[] = [
@@ -157,7 +157,7 @@ export default function App() {
   const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
   const [notificationLeaving, setNotificationLeaving] = useState(false);
   const activeProfile = profiles.find(candidate => candidate.id === profile) ?? profiles[0];
-  const notify = (title: string, detail: string) => setNotificationQueue(items => [...items, { id: crypto.randomUUID(), title, detail }].slice(-5));
+  const notify = (title: string, detail: string, aimTrial = false) => setNotificationQueue(items => [...items, { id: crypto.randomUUID(), title, detail, aimTrial }].slice(-5));
   const buttons = activeProfile?.buttons ?? defaultButtons;
 
   const [bgMode, setBgMode] = useState<BackgroundMode>(() => (localStorage.getItem("unnamed-bg-mode") as BackgroundMode) || "default");
@@ -186,7 +186,6 @@ export default function App() {
   const [converterSensitivity, setConverterSensitivity] = useState(1);
   const [targetDpi, setTargetDpi] = useState(1600);
   const [surfaceChecks, setSurfaceChecks] = useState<string[]>([]);
-  const [aimPromptVisible, setAimPromptVisible] = useState(false);
   const [trainerMode, setTrainerMode] = useState<TrainerMode>("Flick");
   const [trainerActive, setTrainerActive] = useState(false);
   const [trainerScore, setTrainerScore] = useState(0);
@@ -296,7 +295,7 @@ export default function App() {
   const refresh = useCallback(async () => { setLoading(true); setError(null); try { setMice(await invoke<MouseDevice[]>("detect_mice", { showHidden: showOtherDevices })); } catch (e) { setMice([]); setError(e instanceof Error ? e.message : String(e)); } finally { setLoading(false); } }, [showOtherDevices]);
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => () => { if (dpiTimer.current) clearTimeout(dpiTimer.current); }, []);
-  const applyDpi = (value: number) => { if (value === dpi) return; setDpi(value); setProfiles(items => items.map(item => item.id === activeProfile?.id ? { ...item, dpi: value } : item)); setError(null); if (dpiTimer.current) clearTimeout(dpiTimer.current); dpiTimer.current = setTimeout(async () => { try { await invoke("set_dpi", { dpi: value }); setAimPromptVisible(true); notify("DPI changed", `Your mouse is now set to ${value} DPI.`); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }, 420); };
+  const applyDpi = (value: number) => { if (value === dpi) return; setDpi(value); setProfiles(items => items.map(item => item.id === activeProfile?.id ? { ...item, dpi: value } : item)); setError(null); if (dpiTimer.current) clearTimeout(dpiTimer.current); dpiTimer.current = setTimeout(async () => { try { await invoke("set_dpi", { dpi: value }); notify("DPI changed", `Your mouse is now set to ${value} DPI.`, true); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }, 420); };
   const setPollingForProfile = (value: string) => { setPolling(value); setProfiles(items => items.map(item => item.id === activeProfile?.id ? { ...item, polling: value } : item)); };
   const updateButton = (button: string, patch: Partial<ButtonBinding>) => setProfiles(items => items.map(item => item.id === activeProfile?.id ? { ...item, buttons: { ...item.buttons, [button]: { ...item.buttons[button], ...patch } } } : item));
   const askLocalAssistant = async () => {
@@ -412,8 +411,7 @@ export default function App() {
         <div className="app-boot-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={bootProgress}><i style={{ width: `${bootProgress}%` }} /></div>
       </section>
     </div>}
-    <div className="notification-stack" aria-live="polite">{activeNotification && <article className={`app-notification glass-control ${notificationLeaving ? "leaving" : ""}`} key={activeNotification.id}><span>{activeNotification.title}</span><strong>{activeNotification.detail}</strong></article>}</div>
-    {aimPromptVisible && <aside className="dpi-aim-prompt glass-control"><button className="dpi-aim-close" onClick={() => setAimPromptVisible(false)} type="button" aria-label="Dismiss">×</button><span>New DPI applied</span><strong>Practice your aim with {dpi} DPI?</strong><div><button className="primary-button" onClick={() => { setAimPromptVisible(false); setTrainerSeconds(30); setTrainerVisible(true); }} type="button">Quick trial</button><button className="secondary-button" onClick={() => setAimPromptVisible(false)} type="button">Not now</button></div></aside>}
+    <div className="notification-stack" aria-live="polite">{activeNotification && <article className={`app-notification glass-control ${notificationLeaving ? "leaving" : ""}`} key={activeNotification.id}><span>{activeNotification.title}</span><strong>{activeNotification.detail}</strong>{activeNotification.aimTrial && <div className="notification-actions"><button className="primary-button" onClick={() => { setActiveNotification(null); setNotificationLeaving(false); setTrainerSeconds(30); setTrainerVisible(true); }} type="button">Quick trial</button><button className="secondary-button" onClick={() => { setActiveNotification(null); setNotificationLeaving(false); }} type="button">Not now</button></div>}</article>}</div>
     <div className="background-layer" style={{ ...background, opacity: bgMode === "default" ? 1 : bgOpacity / 100, filter: `${bgBlur ? `blur(${bgBlur}px) ` : ""}saturate(${bgSaturation}%)` }} />
     <div className="background-shade" />
     <div className="ui-scale-layer" style={{ "--ui-scale": uiScale / 100 } as React.CSSProperties}>

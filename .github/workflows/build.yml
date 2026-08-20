@@ -24,6 +24,9 @@ concurrency:
   group: app-preview-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   build-app:
     name: Build Portable Windows App
@@ -82,3 +85,14 @@ jobs:
           name: UnnamedEnhancements-Preview-Windows
           path: release/UnnamedEnhancements.exe
           compression-level: 9
+
+
+      - name: Publish direct Preview download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: preview
+          name: Latest Preview
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          files: release/UnnamedEnhancements.exe
