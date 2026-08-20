@@ -180,17 +180,30 @@ fn is_relevant_mouse(mouse: &MouseDevice) -> bool {
     mouse.vid.is_some() && mouse.manufacturer.is_some() && !text.contains("microsoft") && !text.contains("unknown")
 }
 
+fn is_g305_family_name(mouse: &MouseDevice) -> bool {
+    let identity = format!(
+        "{} {} {}",
+        mouse.name,
+        mouse.manufacturer.as_deref().unwrap_or_default(),
+        mouse.id,
+    )
+    .to_ascii_lowercase();
+    identity.contains("g305") || identity.contains("g304")
+}
+
 fn apply_known_mouse_identity(mouse: &mut MouseDevice) {
     if mouse.vid.as_deref() == Some("0x3151")
         && matches!(mouse.pid.as_deref(), Some("0x5031") | Some("0x5032"))
     {
         mouse.name = "Attack Shark X1".to_string();
         mouse.manufacturer = Some("Attack Shark".to_string());
-    } else if mouse.vid.as_deref() == Some("0x046d")
-        && matches!(mouse.pid.as_deref(), Some("0xc53f") | Some("0x4074"))
+    } else if (mouse.vid.as_deref() == Some("0x046d")
+        && matches!(mouse.pid.as_deref(), Some("0xc53f") | Some("0x4074")))
+        || is_g305_family_name(mouse)
     {
-        // The G305 is exposed through its LIGHTSPEED receiver. The receiver
-        // commonly identifies as C53F, while the paired mouse is 4074.
+        // G305 colour and special-edition models use the same LIGHTSPEED
+        // family. G304 is the regional name for the same mouse. Windows may
+        // expose either model name through the paired receiver.
         mouse.name = "Logitech G305 LIGHTSPEED".to_string();
         mouse.manufacturer = Some("Logitech G".to_string());
         mouse.connection = "LIGHTSPEED wireless".to_string();
