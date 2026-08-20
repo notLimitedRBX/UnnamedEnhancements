@@ -166,7 +166,7 @@ export default function App() {
   const [bgSaturation, setBgSaturation] = useState(() => Number(localStorage.getItem("unnamed-bg-saturation") || 100));
   const [uiScale, setUiScale] = useState(() => Number(localStorage.getItem("unnamed-ui-scale") || 100));
   const [bootProgress, setBootProgress] = useState(0);
-  const [showBoot, setShowBoot] = useState(true);
+  const [showBoot, setShowBoot] = useState(() => localStorage.getItem("unnamed-welcome-seen") !== "true");
 
   const [glassMode, setGlassMode] = useState<GlassMode>(() => (localStorage.getItem("unnamed-glass-mode") as GlassMode) || "regular");
   const [glassOpacity, setGlassOpacity] = useState(() => Number(localStorage.getItem("unnamed-glass-opacity") || 64));
@@ -183,7 +183,7 @@ export default function App() {
       setBootProgress(progress);
       if (progress === 100) {
         window.clearInterval(timer);
-        hideTimer = window.setTimeout(() => setShowBoot(false), 260);
+        hideTimer = window.setTimeout(() => { localStorage.setItem("unnamed-welcome-seen", "true"); setShowBoot(false); }, 260);
       }
     }, 80);
     return () => { window.clearInterval(timer); if (hideTimer) window.clearTimeout(hideTimer); };
@@ -300,7 +300,6 @@ export default function App() {
               </article>)}
               {localLoading && <article className="local-ai-message assistant local-ai-thinking"><span className="local-ai-avatar"><Bot size={16}/></span><div><header><strong>Unnamed Local AI</strong><span>Local</span></header><p><i></i><i></i><i></i></p></div></article>}
             </div>
-            {!localMessages.length && <div className="local-ai-suggestions"><span>Try asking</span>{["How do I change my DPI?","Help me make a gaming profile","Why is my mouse not detected?"].map(prompt => <button key={prompt} onClick={() => setLocalQuestion(prompt)} type="button">{prompt}</button>)}</div>}
             <label className="local-ai-composer"><textarea value={localQuestion} placeholder="Message Local AI" onChange={event => setLocalQuestion(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askLocalAssistant(); } }}/><div className="local-ai-actions"><span>Enter to send · Shift + Enter for a new line</span><button className="local-ai-send" aria-label="Send message" disabled={localLoading || !localQuestion.trim()} onClick={() => void askLocalAssistant()} type="button"><SendHorizontal size={17}/></button></div></label>
             <details className="local-ai-setup"><summary>Local AI setup</summary><div><p>Install Ollama, then run this once in PowerShell:</p><code>ollama pull qwen2.5:3b-instruct</code><small>After that, it runs locally with no account or API key.</small></div></details>
           </div>
