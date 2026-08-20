@@ -78,6 +78,7 @@ select, select option, .image-controls select, .profile-picker select, .map-row 
 .x1-map .wheel-click{left:46%;top:25%;width:8%;height:18%;border-radius:7px}
 .x1-map .side-one{left:24%;top:43%;width:5%;height:9%;border-radius:5px}
 .x1-map .side-two{left:24%;top:53%;width:5%;height:9%;border-radius:5px}
+.x1-map.side-view-map{width:min(100%,360px)}.x1-map.side-view-map>img{width:100%;max-height:230px}.x1-map.side-view-map .mouse-zone:not(.side-one):not(.side-two){opacity:0;pointer-events:none}.x1-map.side-view-map .side-one{left:32%;top:43%;width:15%;height:11%;border-radius:10px 5px 6px 10px;clip-path:polygon(9% 18%,100% 0,100% 88%,18% 100%,0 58%)}.x1-map.side-view-map .side-two{left:48%;top:43%;width:15%;height:11%;border-radius:5px 10px 10px 6px;clip-path:polygon(0 0,91% 18%,100% 58%,82% 100%,0 88%)}
 
 
 /* Dark liquid-glass redesign: preserve the existing controls, reduce visual noise. */
